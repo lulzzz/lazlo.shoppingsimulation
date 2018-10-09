@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ServiceManifest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" Name="Lazlo.ShoppingSimulation.ConsumerSimulationActorPkg" Version="1.0.0" xmlns="http://schemas.microsoft.com/2011/01/fabric">
+  <ServiceTypes>
+    <StatefulServiceType ServiceTypeName="ConsumerSimulationActorServiceType" HasPersistedState="true">
+      <Extensions>
+        <Extension Name="__GeneratedServiceType__" GeneratedId="fd395de2-673c-4b53-97b1-4cbeed3fccb4|Persisted">
+          <GeneratedNames xmlns="http://schemas.microsoft.com/2015/03/fabact-no-schema">
+            <DefaultService Name="ConsumerSimulationActorService" />
+            <ReplicatorEndpoint Name="ConsumerSimulationActorServiceReplicatorEndpoint" />
+            <ReplicatorConfigSection Name="ConsumerSimulationActorServiceReplicatorConfig" />
+            <ReplicatorSecurityConfigSection Name="ConsumerSimulationActorServiceReplicatorSecurityConfig" />
+            <StoreConfigSection Name="ConsumerSimulationActorServiceLocalStoreConfig" />
+            <ServiceEndpointV2 Name="ConsumerSimulationActorServiceEndpointV2" />
+          </GeneratedNames>
+        </Extension>
+      </Extensions>
+    </StatefulServiceType>
+  </ServiceTypes>
+  <CodePackage Name="Code" Version="1.0.0">
+    <EntryPoint>
+      <ExeHost>
+        <Program>Lazlo.ShoppingSimulation.ConsumerSimulationActor.exe</Program>
+      </ExeHost>
+    </EntryPoint>
+  </CodePackage>
+  <ConfigPackage Name="Config" Version="1.0.0" />
+  <Resources>
+    <Endpoints>
+      <Endpoint Name="ConsumerSimulationActorServiceEndpointV2" />
+      <Endpoint Name="ConsumerSimulationActorServiceReplicatorEndpoint" />
+    </Endpoints>
+  </Resources>
+  <!-- The content will be generated during build -->
+</ServiceManifest>
