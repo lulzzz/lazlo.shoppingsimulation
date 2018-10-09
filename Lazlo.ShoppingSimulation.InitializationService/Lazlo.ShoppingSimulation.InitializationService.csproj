@@ -12,4 +12,8 @@
     <PackageReference Include="Microsoft.ServiceFabric.Services" Version="3.2.187" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Lazlo.ShoppingSimulation.Common\Lazlo.ShoppingSimulation.Common.csproj" />
+  </ItemGroup>
+
 </Project>
