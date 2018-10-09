@@ -8,8 +8,8 @@
     <Parameter Name="ConsumerSimulationActorService_PartitionCount" Value="1" />
     <Parameter Name="ConsumerSimulationActorService_TargetReplicaSetSize" Value="1" />
     <Parameter Name="ConsumerSimulationActorService_MinReplicaSetSize" Value="1" />
-    <Parameter Name="TicketSimulationActorService_PartitionCount" Value="1" />
-    <Parameter Name="TicketSimulationActorService_TargetReplicaSetSize" Value="1" />
-    <Parameter Name="TicketSimulationActorService_MinReplicaSetSize" Value="1" />
+    <Parameter Name="TicketSimulationActor_PartitionCount" Value="1" />
+    <Parameter Name="TicketSimulationActor_TargetReplicaSetSize" Value="1" />
+    <Parameter Name="TicketSimulationActor_MinReplicaSetSize" Value="1" />
   </Parameters>
 </Application>

@@ -6,11 +6,13 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Lazlo.ShoppingSimulation.Common;
 using Lazlo.ShoppingSimulation.Common.Interfaces;
 using Microsoft.ServiceFabric.Actors;
 using Microsoft.ServiceFabric.Actors.Client;
 using Microsoft.ServiceFabric.Services.Communication.Runtime;
 using Microsoft.ServiceFabric.Services.Runtime;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace Lazlo.ShoppingSimulation.InitializationService
@@ -36,25 +38,24 @@ namespace Lazlo.ShoppingSimulation.InitializationService
         {
             try
             {
-                string code;
+                string configurationUri = "https://devlng.blob.core.windows.net/simulation/SimulationConfiguration.json?st=2018-10-09T20%3A46%3A59Z&se=2028-10-10T20%3A46%3A00Z&sp=rl&sv=2018-03-28&sr=b&sig=c12%2Fj4Zjk0ci5PnzoC15kQ2OxzHMbeoWysfARdsg0eQ%3D";
+
+                string jsonConfig;
 
                 using (HttpClient client = new HttpClient())
                 {
-                    code = await client.GetStringAsync("https://devlng.blob.core.windows.net/simulation/PosDeviceLicenseCodes.json?st=2017-10-09T02%3A55%3A00Z&se=2028-10-10T02%3A55%3A00Z&sp=rl&sv=2018-03-28&sr=b&sig=uFCkCVp2zN2trKUJY2nxLozNfzB9%2B%2BlNTHKqkFSCfg0%3D");
+                    jsonConfig = await client.GetStringAsync(configurationUri);
                 }
 
-                JArray codes = JArray.Parse(code);
+                SimulationConfiguration config = JsonConvert.DeserializeObject<SimulationConfiguration>(jsonConfig);
 
-                foreach (JObject jo in codes)
+                foreach (ApiLicenseDisplay apiLicenseDisplay in config.PosDeviceLicenses)
                 {
-                    Guid licenseId = (Guid)jo["id"];
-                    string licenseCode = (string)jo["code"];
-
-                    ActorId posActorId = new ActorId(licenseId);
+                    ActorId posActorId = new ActorId(apiLicenseDisplay.Id);
 
                     IPosDeviceSimulationActor posDeviceActor = ActorProxy.Create<IPosDeviceSimulationActor>(posActorId, PosServiceUri);
 
-                    await posDeviceActor.InitializeAsync(licenseCode, Common.PosDeviceModes.PosDeviceScans);
+                    await posDeviceActor.InitializeAsync(apiLicenseDisplay.Code, config.ApplicationLicenses, PosDeviceModes.PosDeviceScans);
 
                     break;
                 }
