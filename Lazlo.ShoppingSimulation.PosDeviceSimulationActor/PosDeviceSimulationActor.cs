@@ -37,7 +37,8 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         string _UriBase = "devshopapi.services.32point6.com";
 
         const string InitializedKey = "InitializedKey";
-        const string LicenseCodeKey = "LicenseCodeKey";
+        const string ApplicationLicensesKey = "ApplicationLicensesKey";
+        const string PosDeviceLicenseCodeKey = "PosDeviceLicenseCodeKey";
         const string PosDeviceModeKey = "PosDeviceModeKey";
         const string ReminderName = "ReminderName";
         const string StartupStatusKey = "StartupStatusKey";
@@ -63,7 +64,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         {
         }
 
-        public async Task InitializeAsync(string licenseCode, PosDeviceModes posDeviceMode)
+        public async Task InitializeAsync(string licenseCode, List<ApiLicenseDisplay> applicationLicenses, PosDeviceModes posDeviceMode)
         {
             bool isInitialized = await StateManager.GetOrAddStateAsync<bool>(InitializedKey, false).ConfigureAwait(false);
 
@@ -75,7 +76,8 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             await RegisterReminderAsync(ReminderName, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1)).ConfigureAwait(false);
 
             await StateManager.SetStateAsync(StartupStatusKey, "Created").ConfigureAwait(false);
-            await StateManager.SetStateAsync(LicenseCodeKey, licenseCode).ConfigureAwait(false);
+            await StateManager.SetStateAsync(ApplicationLicensesKey, applicationLicenses).ConfigureAwait(false);
+            await StateManager.SetStateAsync(PosDeviceLicenseCodeKey, licenseCode).ConfigureAwait(false);
             await StateManager.SetStateAsync(PosDeviceModeKey, posDeviceMode).ConfigureAwait(false);
             await StateManager.SetStateAsync(InitializedKey, true).ConfigureAwait(false);
 
@@ -91,7 +93,10 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
                 switch (status)
                 {
                     case "Created":
-                        await CreateConsumerAsync();
+
+                        var appKeys = await StateManager.GetStateAsync<List< ApiLicenseDisplay>>(ApplicationLicensesKey).ConfigureAwait(false);
+
+                        await CreateConsumerAsync(appKeys.First().Code);
 
                         await StateManager.SetStateAsync(StartupStatusKey, "ConsumerCreated").ConfigureAwait(false);
                         break;
@@ -129,7 +134,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             }
         }
 
-        private async Task CreateConsumerAsync()
+        private async Task CreateConsumerAsync(string apiLicenseCode)
         {
             byte[] selfieBytes = GetImageBytes("christina.png");
 
@@ -163,7 +168,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
 
             //httpreq.Headers.Add("Lazlo-SimulationLicenseCode", SimulationLicenseCode);
-            //httpreq.Headers.Add("Lazlo-AuthorityLicenseCode", AuthorityLicenseCode);
+            httpreq.Headers.Add("lazlo-apilicensecode", apiLicenseCode);
             httpreq.Headers.Add("lazlo-correlationrefId", req.CorrelationRefId.ToString());
 
             string json = JsonConvert.SerializeObject(req);

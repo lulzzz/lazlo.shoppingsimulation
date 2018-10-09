@@ -8,9 +8,9 @@
     <Parameter Name="ConsumerSimulationActorService_PartitionCount" DefaultValue="10" />
     <Parameter Name="ConsumerSimulationActorService_MinReplicaSetSize" DefaultValue="3" />
     <Parameter Name="ConsumerSimulationActorService_TargetReplicaSetSize" DefaultValue="3" />
-    <Parameter Name="TicketSimulationActorService_PartitionCount" DefaultValue="10" />
-    <Parameter Name="TicketSimulationActorService_MinReplicaSetSize" DefaultValue="3" />
-    <Parameter Name="TicketSimulationActorService_TargetReplicaSetSize" DefaultValue="3" />
+    <Parameter Name="TicketSimulationActor_PartitionCount" DefaultValue="10" />
+    <Parameter Name="TicketSimulationActor_MinReplicaSetSize" DefaultValue="3" />
+    <Parameter Name="TicketSimulationActor_TargetReplicaSetSize" DefaultValue="3" />
   </Parameters>
   <!-- Import the ServiceManifest from the ServicePackage. The ServiceManifestName and ServiceManifestVersion 
        should match the Name and Version attributes of the ServiceManifest element defined in the 
@@ -49,9 +49,9 @@
         <UniformInt64Partition PartitionCount="[ConsumerSimulationActorService_PartitionCount]" LowKey="-9223372036854775808" HighKey="9223372036854775807" />
       </StatefulService>
     </Service>
-    <Service Name="TicketSimulationActorService" GeneratedIdRef="fb035998-47c5-4ce0-a14d-a4370dbc7930|Persisted">
-      <StatefulService ServiceTypeName="TicketSimulationActorServiceType" TargetReplicaSetSize="[TicketSimulationActorService_TargetReplicaSetSize]" MinReplicaSetSize="[TicketSimulationActorService_MinReplicaSetSize]">
-        <UniformInt64Partition PartitionCount="[TicketSimulationActorService_PartitionCount]" LowKey="-9223372036854775808" HighKey="9223372036854775807" />
+    <Service Name="TicketSimulationActor" GeneratedIdRef="e322802c-85da-49fc-9df7-2676c0dc8d92|Persisted">
+      <StatefulService ServiceTypeName="TicketSimulationActorType" TargetReplicaSetSize="[TicketSimulationActor_TargetReplicaSetSize]" MinReplicaSetSize="[TicketSimulationActor_MinReplicaSetSize]">
+        <UniformInt64Partition PartitionCount="[TicketSimulationActor_PartitionCount]" LowKey="-9223372036854775808" HighKey="9223372036854775807" />
       </StatefulService>
     </Service>
   </DefaultServices>
