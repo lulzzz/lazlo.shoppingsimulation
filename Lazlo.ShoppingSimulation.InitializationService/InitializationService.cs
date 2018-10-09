@@ -20,6 +20,8 @@ namespace Lazlo.ShoppingSimulation.InitializationService
     /// </summary>
     internal sealed class InitializationService : StatelessService
     {
+        static readonly Uri PosServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/PosDeviceSimulationActorService");
+
         public InitializationService(StatelessServiceContext context)
             : base(context)
         {
@@ -45,16 +47,17 @@ namespace Lazlo.ShoppingSimulation.InitializationService
 
                 foreach (JObject jo in codes)
                 {
-                    Guid licenseCode = (Guid)jo["id"];
+                    Guid licenseId = (Guid)jo["id"];
+                    string licenseCode = (string)jo["code"];
 
-                    //ActorId partitionActorId = new ActorId(Guid.Parse("0515122e-337e-47da-aa84-2b1f5b6e5d23"));
+                    ActorId posActorId = new ActorId(licenseId);
 
-                    //IPosDeviceSimulationActor posDeviceActor = ActorProxy.Create<IPosDeviceSimulationActor>(partitionActorId, new Uri("fabric:/LotteryNG.ServiceFabric.Simulation/PlayerActorService"));
+                    IPosDeviceSimulationActor posDeviceActor = ActorProxy.Create<IPosDeviceSimulationActor>(posActorId, PosServiceUri);
 
-                    //await posDeviceActor.InitializeAsync();
+                    await posDeviceActor.InitializeAsync(licenseCode, Common.PosDeviceModes.PosDeviceScans);
+
+                    break;
                 }
-
-
             }
 
             catch (Exception ex)

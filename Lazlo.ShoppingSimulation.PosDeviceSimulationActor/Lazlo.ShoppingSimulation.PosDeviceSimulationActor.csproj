@@ -13,6 +13,16 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Images\christina.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Images\christina.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Lazlo.Gaming.Random" Version="1.0.0" />
+    <PackageReference Include="Lazlo.Shopping.Common" Version="1.0.8" />
     <PackageReference Include="Microsoft.ServiceFabric.Actors" Version="3.2.187" />
   </ItemGroup>
 
