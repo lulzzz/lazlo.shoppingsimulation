@@ -13,6 +13,9 @@ namespace Lazlo.ShoppingSimulation.Common.Interfaces
     /// </summary>
     public interface IPosDeviceSimulationActor : IActor
     {
-        Task InitializeAsync(string licenseCode, PosDeviceModes posDeviceModes);
+        Task<Guid> PosDeviceInitialize(
+           string apiLicenseCode,
+           List<string> AppApiLicenseCode
+           );
     }
 }

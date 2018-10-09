@@ -20,7 +20,7 @@ namespace Lazlo.ShoppingSimulation.TicketSimulationActor
         Create = 0,
         Initialize = 1,
         Void = 2,
-        Status = 3,
+        Render = 3,
         Recieve = 4,
         Kill = 100
     }
@@ -57,7 +57,7 @@ namespace Lazlo.ShoppingSimulation.TicketSimulationActor
         private TicketSimulationStateType state;
         private TicketSimulationStateType stateFlags;
         private StateMachine<TicketSimulationStateType, TicketSimulationTriggerType> machine;
-        private StateMachine<TicketSimulationStateType, TicketSimulationTriggerType>.TriggerWithParameters<Guid, SimulationType> initializedTrigger;
+        private StateMachine<TicketSimulationStateType, TicketSimulationTriggerType>.TriggerWithParameters<Guid, Lazlo.Common.Enumerators.SimulationType> initializedTrigger;
 
         private TicketStatus _TicketStatus { get; set; }
 
@@ -91,9 +91,7 @@ namespace Lazlo.ShoppingSimulation.TicketSimulationActor
                 var savedStateFlags = await this.StateManager.TryGetStateAsync<TicketSimulationStateType>($"{nameof(this.stateFlags)}");
 
                 ConfigureMachine();
-
-                //this.state = savedState.HasValue ? savedState.Value : TicketSimulationStateType.None;
-
+                
                 if (this.machine.IsInState(TicketSimulationStateType.None))
                 {
                     // first load, initalize                    
@@ -162,10 +160,8 @@ namespace Lazlo.ShoppingSimulation.TicketSimulationActor
             initializedTrigger = machine.SetTriggerParameters<Guid, SimulationType>(TicketSimulationTriggerType.Initialize);
             machine.Configure(TicketSimulationStateType.Initialized)
                 .Permit(TicketSimulationTriggerType.Void, TicketSimulationStateType.Voided)
-                .Permit(TicketSimulationTriggerType.Status, TicketSimulationStateType.Processing)
-                .Permit(TicketSimulationTriggerType.Status, TicketSimulationStateType.Processed)
-                .Permit(TicketSimulationTriggerType.Status, TicketSimulationStateType.Rendering)
-                .Permit(TicketSimulationTriggerType.Status, TicketSimulationStateType.Rendered)
+                .Permit(TicketSimulationTriggerType.Render, TicketSimulationStateType.Rendered)
+                .Permit(TicketSimulationTriggerType.Recieve, TicketSimulationStateType.Recieved)
                 .OnEntryFromAsync(initializedTrigger, (checkoutSessionRefId, simulationType) => OnInitialized(checkoutSessionRefId, simulationType))
                 ;
 
@@ -271,25 +267,44 @@ namespace Lazlo.ShoppingSimulation.TicketSimulationActor
                     }
                     break;
                 case "Process.Me":
-                    if (
-                        this.machine.IsInState(TicketSimulationStateType.Processing)
-                        )
+
+                    switch (this.machine.State)
                     {
-                        try
-                        {
-                            //var rnd = new Random();
+                        case TicketSimulationStateType.None:
+                            break;
+                        case TicketSimulationStateType.Created:
+                            break;
+                        case TicketSimulationStateType.Initialized:
+                            break;
+                        case TicketSimulationStateType.Voided:
+                            break;                        
+                        case TicketSimulationStateType.Rendering:
+                            // call status update
 
-                            //ICheckoutSessionManager proxy = ServiceProxy.Create<ICheckoutSessionManager>(
-                            //    new Uri("fabric:/Deploy.Lazlo.Checkout.Api/Lazlo.SrvcFbrc.Services.CheckoutSessionManager"),
-                            //    new Microsoft.ServiceFabric.Services.Client.ServicePartitionKey(
-                            //            rnd.Next(0, 1023)));
+                            // if GeneratedOn NOT null move to recieving
+                            await this.machine.FireAsync(TicketSimulationTriggerType.Recieve);
 
-                            //var killMe = await proxy.Archive(this.GetActorReference().ActorId.GetGuidId());
-                        }
-                        catch (Exception ex)
-                        {
-                        }
+                            break;
+                        case TicketSimulationStateType.Rendered:
+                            break;
+                        case TicketSimulationStateType.Recieving:
+                            
+                            // call recieved
+
+                            // if success move to recieved
+                            await this.machine.FireAsync(TicketSimulationTriggerType.Kill);
+
+                            break;
+                        case TicketSimulationStateType.Recieved:
+                            break;
+                        case TicketSimulationStateType.Completed:
+                            break;
+                        case TicketSimulationStateType.DeadManWalking:
+                            break;
+                        default:
+                            break;
                     }
+
                     break;                
                 default:
                     break;
@@ -310,7 +325,6 @@ namespace Lazlo.ShoppingSimulation.TicketSimulationActor
                 return false;
             }
         }
-
 
         #region Create
 
@@ -365,7 +379,7 @@ namespace Lazlo.ShoppingSimulation.TicketSimulationActor
 
         #region Cancel
 
-        private Task<bool> CanCancel(CancellationToken cancellationToken)
+        private Task<bool> CanVoid(CancellationToken cancellationToken)
         {
             Debug.Assert(state == machine.State);
             return Task.FromResult(machine.CanFire(TicketSimulationTriggerType.Void));
