@@ -160,16 +160,20 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         /// <param name="brandRefId"></param>
         /// <param name="simulationType"></param>
         /// <returns></returns>
-        public async Task<Guid> PosDeviceInitialize(
-            string apiLicenseCode,
-            List<string> AppApiLicenseCode
-            )
+        public async Task InitializeAsync(string posDeviceApiLicenseCode, List<ApiLicenseDisplay> ApplicationLicenses, PosDeviceModes posDeviceModes)
         {
             if (this.machine.IsInState(PosDeviceSimulationStateType.Created))
             {
-                await this.machine.FireAsync(initializedTrigger, apiLicenseCode);
+                await this.machine.FireAsync(PosDeviceSimulationTriggerType.Initialize);
 
-                return this.GetActorReference().ActorId.GetGuidId();
+                //await this.machine.FireAsync(PosDeviceSimulationTriggerType.Registering);
+
+                //await this.machine.FireAsync(initializedTrigger, posDeviceApiLicenseCode);
+            }
+
+            else
+            {
+
             }
 
             ActorEventSource.Current.ActorMessage(this, $"{nameof(PosDeviceSimulationActor)} already initialized.");
@@ -196,10 +200,14 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
                 .OnEntryAsync(async () => await OnCreated())
                 ;
 
-            initializedTrigger = machine.SetTriggerParameters<string>(PosDeviceSimulationTriggerType.Initialize);
+            //initializedTrigger = machine.SetTriggerParameters<string>(PosDeviceSimulationTriggerType.Initialize);
             machine.Configure(PosDeviceSimulationStateType.Initialized)
                 .Permit(PosDeviceSimulationTriggerType.Registering, PosDeviceSimulationStateType.Registering)
-                .OnEntryFromAsync(initializedTrigger, (appApiLicenseCode) => OnInitialized(appApiLicenseCode))
+                .Permit(PosDeviceSimulationTriggerType.Create, PosDeviceSimulationStateType.Created)
+                .OnEntryAsync(CatchAll)
+                //.OnEntryFromAsync(PosDeviceSimulationTriggerType.Registering, OtherToInitialized)
+                .OnEntryFromAsync(PosDeviceSimulationTriggerType.Initialize, CreateToInitialized)
+                //.OnEntryFromAsync(initializedTrigger, (appApiLicenseCode) => OnInitialized(appApiLicenseCode))
                 ;
 
             machine.Configure(PosDeviceSimulationStateType.Registering)
@@ -214,7 +222,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
                 //.OnExitAsync(() => OnDeadManWalking())
                 ;
 
-            initializedTrigger = machine.SetTriggerParameters<string>(PosDeviceSimulationTriggerType.TxStart);
+            txStartTrigger = machine.SetTriggerParameters<string>(PosDeviceSimulationTriggerType.TxStart);
             machine.Configure(PosDeviceSimulationStateType.TxStarted)
                 .Permit(PosDeviceSimulationTriggerType.TxRelease, PosDeviceSimulationStateType.TxReleased)
                 .OnEntryFromAsync(txStartTrigger, (appApiLicenseCode) => OnTxStart(appApiLicenseCode))
@@ -408,6 +416,21 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         {
             Debug.Assert(state == machine.State);
             return Task.FromResult(machine.CanFire(PosDeviceSimulationTriggerType.Initialize));
+        }
+
+        private async Task CatchAll()
+        {
+            await Task.Delay(1);
+        }
+
+        private async Task OtherToInitialized()
+        {
+            await Task.Delay(1);
+        }
+
+        private async Task CreateToInitialized()
+        {
+            await Task.Delay(1);
         }
 
         private async Task OnInitialized(string appApiLicenseCode)
