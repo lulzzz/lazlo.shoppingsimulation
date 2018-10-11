@@ -546,8 +546,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
             string posDeviceApiLicenseCode = await StateManager.GetStateAsync<string>(PosDeviceApiLicenseCodeKey).ConfigureAwait(false);
 
-            httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
-            //httpreq.Headers.Add("lazlo-apilicensecode", posDeviceApiLicenseCode); // 2018.10.10 What header do we send the posDeviceCode in?
+            httpreq.Headers.Add("lazlo-apilicensecode", posDeviceApiLicenseCode);
 
             httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
