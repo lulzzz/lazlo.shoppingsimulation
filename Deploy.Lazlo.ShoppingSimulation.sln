@@ -5,17 +5,22 @@ VisualStudioVersion = 15.0.28010.2041
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{A07B5EB6-E848-4116-A8D0-A826331D98C6}") = "Deploy.Lazlo.ShoppingSimulation", "Deploy.Lazlo.ShoppingSimulation\Deploy.Lazlo.ShoppingSimulation.sfproj", "{5B5CCE74-FF0D-40F4-959C-2CF348C3F1B3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lazlo.ShoppingSimulation.InitializationService", "Lazlo.ShoppingSimulation.InitializationService\Lazlo.ShoppingSimulation.InitializationService.csproj", "{8EFB7E51-C7C8-4A42-8AE0-B58BA78ABBFD}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lazlo.ShoppingSimulation.InitializationService", "Lazlo.ShoppingSimulation.InitializationService\Lazlo.ShoppingSimulation.InitializationService.csproj", "{8EFB7E51-C7C8-4A42-8AE0-B58BA78ABBFD}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lazlo.ShoppingSimulation.PosDeviceSimulationActor", "Lazlo.ShoppingSimulation.PosDeviceSimulationActor\Lazlo.ShoppingSimulation.PosDeviceSimulationActor.csproj", "{8104C57F-653C-4F39-9D72-D31A85780182}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lazlo.ShoppingSimulation.PosDeviceSimulationActor", "Lazlo.ShoppingSimulation.PosDeviceSimulationActor\Lazlo.ShoppingSimulation.PosDeviceSimulationActor.csproj", "{8104C57F-653C-4F39-9D72-D31A85780182}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lazlo.ShoppingSimulation.Common", "Lazlo.ShoppingSimulation.Common\Lazlo.ShoppingSimulation.Common.csproj", "{38EB45A8-BA67-49A4-98C6-FFA565E71845}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lazlo.ShoppingSimulation.Common", "Lazlo.ShoppingSimulation.Common\Lazlo.ShoppingSimulation.Common.csproj", "{38EB45A8-BA67-49A4-98C6-FFA565E71845}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lazlo.ShoppingSimulation.ConsumerSimulationActor", "Lazlo.ShoppingSimulation.ConsumerSimulationActor\Lazlo.ShoppingSimulation.ConsumerSimulationActor.csproj", "{8993825A-3295-4851-A61B-85A0A41D5A74}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lazlo.ShoppingSimulation.ConsumerSimulationActor", "Lazlo.ShoppingSimulation.ConsumerSimulationActor\Lazlo.ShoppingSimulation.ConsumerSimulationActor.csproj", "{8993825A-3295-4851-A61B-85A0A41D5A74}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lazlo.ShoppingSimulation.TicketSimulationActor", "Lazlo.ShoppingSimulation.TicketSimulationActor\Lazlo.ShoppingSimulation.TicketSimulationActor.csproj", "{6C9C07FB-88BA-4339-81E4-E84CDB89B514}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lazlo.ShoppingSimulation.TicketSimulationActor", "Lazlo.ShoppingSimulation.TicketSimulationActor\Lazlo.ShoppingSimulation.TicketSimulationActor.csproj", "{6C9C07FB-88BA-4339-81E4-E84CDB89B514}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Actors", "Actors", "{A0E8B6BE-185D-41CA-B4F2-2651ACA5B892}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SolutionItems", "SolutionItems", "{72E32AB8-59D1-4F82-B72E-885A45D1941C}"
+	ProjectSection(SolutionItems) = preProject
+		Directory.Build.props = Directory.Build.props
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -22,37 +22,6 @@ using Lazlo.Common.Enumerators;
 
 namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 {
-    public enum PosDeviceSimulationTriggerType
-    {
-        // reserved
-        Create = 0,
-        Initialize = 1,
-        // reserved
-
-        Registering = 16,
-        Registered = 32,
-        TxStart = 64,
-        TxRelease = 128, // idempotent
-        TxProcess = 512, // hand to ConsumerActor
-        TxEnded = 1024, // Actor reports back I'm done
-    }
-
-    [Flags]
-    public enum PosDeviceSimulationStateType
-    {
-        None = 0,
-        Created = 1,
-        Initialized = 2,
-        Registering = 16,
-        Registered = 32,
-        TxStarted = 64,
-        TxReleasing = 128, // idempotent
-        TxReleased = 256, // succeeeded in calling checkoutcomplete
-        TxProcessing = 512, // hand to ConsumerActor
-        TxEnded = 1024, // Actor reports back I'm done
-        DeadManWalking = 8196
-    }
-
     /// <remarks>
     /// This class represents an actor.
     /// Every ActorID maps to an instance of this class.
@@ -62,44 +31,36 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
     ///  - None: State is kept in memory only and not replicated.
     /// </remarks>
     [StatePersistence(StatePersistence.Persisted)]
-    internal class PosDeviceSimulationActor : Actor, IPosDeviceSimulationActor, IRemindable
+    public partial class PosDeviceSimulationActor : Actor, IPosDeviceSimulationActor, IRemindable
     {
         static readonly Uri ConsumerServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/ConsumerSimulationActorService");
 
-        const bool _UseLocalHost = false;
+        const bool _UseLocalHost = true;
         string _UriBase = "devshopapi.services.32point6.com";
 
         const string InitializedKey = "InitializedKey";
-        const string LicenseCodeKey = "LicenseCodeKey";
+        const string PosDeviceApiLicenseCodeKey = "PosDeviceApiLicenseCodeKey";
         const string PosDeviceModeKey = "PosDeviceModeKey";
-        const string ReminderName = "ReminderName";
+        const string AppApiLicensesKey = "AppApiLicensesKey";
         const string StartupStatusKey = "StartupStatusKey";
         const string PlayerLicenseCodeKey = "PlayerLicenseCodeKey";
+        const string KillMeReminderKey = "KillMeReminderKey";
+        const string WorkflowReminderKey = "WorkflowReminderKey";
+        const string StateKey = "StateKey";
+        const string StateFlagsKey = "StateFlagsKey";
+
+        const string CheckoutSessionLicenseCodeKey = "CheckoutSessionLicenseCodeKey";
 
         protected HttpClient _HttpClient = new HttpClient();
 
-        //const string RetailerRefIdKey = "RetailerRefIdKey"; //TODO Pull in as part of Initialization
-
         double _Latitude = 42.129224;       //TODO pull from init
         double _Longitude = -80.085059;
-        
-
-
-
-
-
-
-
-
-
 
         private PosDeviceSimulationStateType state;
         private PosDeviceSimulationStateType stateFlags;
-        private StateMachine<PosDeviceSimulationStateType, PosDeviceSimulationTriggerType> machine;
-        private StateMachine<PosDeviceSimulationStateType, PosDeviceSimulationTriggerType>.TriggerWithParameters<string> initializedTrigger;
+        
+        
         private StateMachine<PosDeviceSimulationStateType, PosDeviceSimulationTriggerType>.TriggerWithParameters<string> txStartTrigger;
-
-        private PosDevice _PosDevice { get; set; }
 
         /// <summary>
         /// Initializes a new instance of PosDeviceSimulationActor
@@ -108,15 +69,8 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         /// <param name="actorId">The Microsoft.ServiceFabric.Actors.ActorId for this actor instance.</param>
         public PosDeviceSimulationActor(ActorService actorService, ActorId actorId)
             : base(actorService, actorId)
-        {   
-            // This is a critical step
-            // We have no way to clean up Actors without this call
-            // Enumerating the services Actors is no realistic as it will have millions in production
-            if (!this.stateFlags.HasFlag(PosDeviceSimulationStateType.Created))
-            {
-                // Only way to clean up the Actor Instance so do it first
-                RegisterKillMeReminder().Wait();
-            }
+        {
+            RegisterKillMeReminder().Wait();
         }
 
         /// <summary>
@@ -127,30 +81,27 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         {
             try
             {
-                var savedState = await this.StateManager.TryGetStateAsync<PosDeviceSimulationStateType>($"{nameof(this.state)}");
-                var savedStateFlags = await this.StateManager.TryGetStateAsync<PosDeviceSimulationStateType>($"{nameof(this.stateFlags)}");
+                state = await StateManager.GetOrAddStateAsync<PosDeviceSimulationStateType>(StateKey, PosDeviceSimulationStateType.None);
+                stateFlags = await StateManager.GetOrAddStateAsync<PosDeviceSimulationStateType>(StateKey, PosDeviceSimulationStateType.None);
 
                 ConfigureMachine();
-                
-                if (this.machine.IsInState(PosDeviceSimulationStateType.None))
+
+                if (_Machine.IsInState(PosDeviceSimulationStateType.None))
                 {
                     // first load, initalize                    
-                    await this.machine.FireAsync(PosDeviceSimulationTriggerType.Create);
+                    await this._Machine.FireAsync(PosDeviceSimulationTriggerType.CreateActor);
                 }
-
-                //TODO wrap in Polly                
-                var tryGetEntity = StateManager.TryGetStateAsync<string>($"{nameof(PosDevice)}").Result;
-                if (tryGetEntity.HasValue) this._PosDevice = JsonConvert.DeserializeObject<PosDevice>(tryGetEntity.Value);
 
                 ActorEventSource.Current.ActorMessage(this, $"Actor [{this.GetActorReference().ActorId.GetGuidId()}] activated.");
 
                 ActorEventSource.Current.ActorMessage(this, $"Actor [{this.GetActorReference().ActorId.GetGuidId()}] state at activation: {this.state}");
             }
+
             catch (Exception ex)
             {
+                Debug.WriteLine(ex);
+                throw;
             }
-
-            return;
         }
 
         /// <summary>
@@ -160,211 +111,94 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         /// <param name="brandRefId"></param>
         /// <param name="simulationType"></param>
         /// <returns></returns>
-        public async Task InitializeAsync(string posDeviceApiLicenseCode, List<ApiLicenseDisplay> ApplicationLicenses, PosDeviceModes posDeviceModes)
+        public async Task InitializeAsync(string posDeviceApiLicenseCode, List<ApiLicenseDisplay> applicationLicenses, PosDeviceModes posDeviceModes)
         {
-            if (this.machine.IsInState(PosDeviceSimulationStateType.Created))
+            try
             {
-                await this.machine.FireAsync(PosDeviceSimulationTriggerType.Initialize);
+                if (_Machine.State == PosDeviceSimulationStateType.ActorCreated)
+                {
+                    await _Machine.FireAsync(_InitializeTrigger, posDeviceApiLicenseCode, applicationLicenses, posDeviceModes);
+                }
 
-                //await this.machine.FireAsync(PosDeviceSimulationTriggerType.Registering);
-
-                //await this.machine.FireAsync(initializedTrigger, posDeviceApiLicenseCode);
+                else
+                {
+                    ActorEventSource.Current.ActorMessage(this, $"{nameof(PosDeviceSimulationActor)} already initialized.");
+                }
             }
 
-            else
+            catch (Exception ex)
             {
+                Debug.WriteLine(ex);
+                throw;
+            }
+        }
+               
+        private async Task LogTransitionAsync(StateMachine<PosDeviceSimulationStateType, PosDeviceSimulationTriggerType>.Transition arg)
+        {
+            Debug.WriteLine($"Transition from {arg.Source} to {arg.Destination}");
 
+            try
+            {
+                //var conditionalValue = await this.StateManager.TryGetStateAsync<StateTransitionHistory<PosDeviceSimulationStateType>>("transitionHistory");
+
+                //StateTransitionHistory<PosDeviceSimulationStateType> history;
+
+                //if (conditionalValue.HasValue)
+                //{
+                //    history = StateTransitionHistory<PosDeviceSimulationStateType>.AddTransition(arg.Destination, conditionalValue.Value);
+                //}
+                //else
+                //{
+                //    history = new StateTransitionHistory<PosDeviceSimulationStateType>(arg.Destination);
+                //}
+
+                //await this.StateManager.SetStateAsync<StateTransitionHistory<PosDeviceSimulationStateType>>("transitionHistory", history);
             }
 
-            ActorEventSource.Current.ActorMessage(this, $"{nameof(PosDeviceSimulationActor)} already initialized.");
-            throw new InvalidOperationException($"{nameof(PosDeviceSimulationActor)} [{this.GetActorReference().ActorId.GetGuidId()}] has already been initialized.");
-        }
-
-        private void ConfigureMachine()
-        {
-            machine = new StateMachine<PosDeviceSimulationStateType, PosDeviceSimulationTriggerType>(
-                () => this.state,
-                s => this.state = s
-                );
-
-            // this state machine code is modified from https://github.com/dotnet-state-machine/stateless/tree/dev/example/BugTrackerExample
-            // under the Apache 2.0 license: https://github.com/dotnet-state-machine/stateless/blob/dev/LICENSE
-            machine.OnTransitionedAsync(LogTransitionAsync<PosDeviceSimulationStateType, PosDeviceSimulationTriggerType>);
-
-            machine.Configure(PosDeviceSimulationStateType.None)
-                .Permit(PosDeviceSimulationTriggerType.Create, PosDeviceSimulationStateType.Created)
-                ;
-
-            machine.Configure(PosDeviceSimulationStateType.Created)
-                .Permit(PosDeviceSimulationTriggerType.Initialize, PosDeviceSimulationStateType.Initialized)
-                .OnEntryAsync(async () => await OnCreated())
-                ;
-
-            //initializedTrigger = machine.SetTriggerParameters<string>(PosDeviceSimulationTriggerType.Initialize);
-            machine.Configure(PosDeviceSimulationStateType.Initialized)
-                .Permit(PosDeviceSimulationTriggerType.Registering, PosDeviceSimulationStateType.Registering)
-                .Permit(PosDeviceSimulationTriggerType.Create, PosDeviceSimulationStateType.Created)
-                .OnEntryAsync(CatchAll)
-                //.OnEntryFromAsync(PosDeviceSimulationTriggerType.Registering, OtherToInitialized)
-                .OnEntryFromAsync(PosDeviceSimulationTriggerType.Initialize, CreateToInitialized)
-                //.OnEntryFromAsync(initializedTrigger, (appApiLicenseCode) => OnInitialized(appApiLicenseCode))
-                ;
-
-            machine.Configure(PosDeviceSimulationStateType.Registering)
-                .SubstateOf(PosDeviceSimulationStateType.Initialized)
-                .OnEntryAsync(async () => await OnRegistering())
-                //.OnExitAsync(() => OnDeadManWalking())
-                ;
-
-            machine.Configure(PosDeviceSimulationStateType.Registered)
-                .SubstateOf(PosDeviceSimulationStateType.Initialized)
-                .OnEntryAsync(async () => await OnRegistered())
-                //.OnExitAsync(() => OnDeadManWalking())
-                ;
-
-            txStartTrigger = machine.SetTriggerParameters<string>(PosDeviceSimulationTriggerType.TxStart);
-            machine.Configure(PosDeviceSimulationStateType.TxStarted)
-                .Permit(PosDeviceSimulationTriggerType.TxRelease, PosDeviceSimulationStateType.TxReleased)
-                .OnEntryFromAsync(txStartTrigger, (appApiLicenseCode) => OnTxStart(appApiLicenseCode))
-                ;
-        }
-
-        private async Task LogTransitionAsync<T, K>(
-            StateMachine<T,
-            K>.Transition arg
-            )
-        {
-            var conditionalValue = await this.StateManager.TryGetStateAsync<StateTransitionHistory<T>>("transitionHistory");
-
-            StateTransitionHistory<T> history;
-            if (conditionalValue.HasValue)
+            catch (Exception ex)
             {
-                history = StateTransitionHistory<T>.AddTransition(arg.Destination, conditionalValue.Value);
+                Debug.WriteLine("Unable to save transition history");
             }
-            else
-            {
-                history = new StateTransitionHistory<T>(arg.Destination);
-            }
-
-            await this.StateManager.SetStateAsync<StateTransitionHistory<T>>("transitionHistory", history);
         }
 
-        private async Task AddOrUpdateEntityStateAsync()
+        private async Task SetStateAsync()
         {
-            //TODO Polly
-            await this.StateManager.AddOrUpdateStateAsync(
-                nameof(state),
-                machine.State,
-                (key, value) => machine.State
-                );
-
-            await this.StateManager.AddOrUpdateStateAsync(
-               nameof(stateFlags),
-               stateFlags,
-               (key, value) => stateFlags
-               );
-
-            await StateManager.AddOrUpdateStateAsync(
-                $"{nameof(Player)}",
-                JsonConvert.SerializeObject(this._PosDevice),
-                (key, value) => JsonConvert.SerializeObject(this._PosDevice));
+            await this.StateManager.SetStateAsync(StateKey, state);
+            await this.StateManager.SetStateAsync(StateFlagsKey, stateFlags);
         }
 
+        #region Reminder Management
         private async Task RegisterKillMeReminder()
         {
-            IActorReminder reminderRegistration = await this.RegisterReminderAsync(
-                $"Kill.Me",
-                null,
-                TimeSpan.FromMinutes(15),   //The amount of time to delay before firing the reminder
-                TimeSpan.FromMinutes(15)    //The time interval between firing of reminders
-                );
+            try
+            {
+                IActorReminder reminderRegistration = await this.RegisterReminderAsync(
+                    KillMeReminderKey,
+                    null,
+                    TimeSpan.FromMinutes(15),   //The amount of time to delay before firing the reminder
+                    TimeSpan.FromMinutes(15)    //The time interval between firing of reminders
+                    );
 
-            //TODO telemetry
+                //TODO telemetry
+            }
+
+            catch (Exception ex)
+            {
+                Debugger.Break();
+                
+            }
         }
 
-        private async Task RegisterProcessMeReminder()
+        private async Task RegisterWorkflowReminder()
         {
             IActorReminder reminderRegistration = await this.RegisterReminderAsync(
-                $"Process.Me",
+                WorkflowReminderKey,
                 null,
                 TimeSpan.FromSeconds(5),   //The amount of time to delay before firing the reminder
                 TimeSpan.FromSeconds(15)    //The time interval between firing of reminders
                 );
 
             //TODO telemetry
-        }
-
-        public async Task ReceiveReminderAsync(string reminderName, byte[] state, TimeSpan dueTime, TimeSpan period)
-        {
-            ActorEventSource.Current.ActorMessage(this, $"{nameof(PosDeviceSimulationActor)} [TODO PosDeviceSimulationActor.Id] reminder recieved.");
-
-            switch (reminderName)
-            {
-                case "Kill.Me":
-                    if (
-                        this.machine.IsInState(PosDeviceSimulationStateType.DeadManWalking)
-                        || DateTimeOffset.UtcNow.AddMinutes(5) > this._PosDevice.CreatedOn.UtcDateTime)
-                    {
-                        try
-                        {
-                            var rnd = new Random();
-
-                            //ICheckoutSessionManager proxy = ServiceProxy.Create<ICheckoutSessionManager>(
-                            //    new Uri("fabric:/Deploy.Lazlo.Checkout.Api/Lazlo.SrvcFbrc.Services.CheckoutSessionManager"),
-                            //    new Microsoft.ServiceFabric.Services.Client.ServicePartitionKey(
-                            //            rnd.Next(0, 1023)));
-
-                            //var killMe = await proxy.Archive(this.GetActorReference().ActorId.GetGuidId());
-                        }
-                        catch (Exception ex)
-                        {
-                        }
-                    }
-                    break;
-                case "Process.Me":
-
-                    switch (this.machine.State)
-                    {
-                        case PosDeviceSimulationStateType.None:
-                            break;
-                        case PosDeviceSimulationStateType.Created:
-                            break;
-                        case PosDeviceSimulationStateType.Initialized:
-                            break;
-                        case PosDeviceSimulationStateType.Registering:
-                            // here then retry posdeviceregister, we failed during call
-                            await this.machine.FireAsync(PosDeviceSimulationTriggerType.Registering);
-
-                            break;
-                        case PosDeviceSimulationStateType.Registered:
-                            // this means i'm waiting to start a Tx
-
-                            //TODO timer or whatever then
-
-                            await this.machine.FireAsync(PosDeviceSimulationTriggerType.TxStart);
-
-                            break;
-                        case PosDeviceSimulationStateType.TxStarted:
-
-                            break;
-                        case PosDeviceSimulationStateType.TxReleasing:
-                            break;
-                        case PosDeviceSimulationStateType.TxReleased:
-                            break;
-                        case PosDeviceSimulationStateType.TxProcessing:
-                            break;
-                        case PosDeviceSimulationStateType.TxEnded:
-                            break;
-                        case PosDeviceSimulationStateType.DeadManWalking:
-                            break;
-                        default:
-                            break;
-                    }
-
-                    break;
-                default:
-                    break;
-            }
         }
 
         private async Task<bool> ReminderUnRegistered(string reminderName)
@@ -381,167 +215,177 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
                 return false;
             }
         }
+        #endregion
+
+        private async Task ProcessKillMe()
+        {
+            if (this._Machine.IsInState(PosDeviceSimulationStateType.DeadManWalking))
+            {
+                try
+                {
+                    var rnd = new Random();
+
+                    //ICheckoutSessionManager proxy = ServiceProxy.Create<ICheckoutSessionManager>(
+                    //    new Uri("fabric:/Deploy.Lazlo.Checkout.Api/Lazlo.SrvcFbrc.Services.CheckoutSessionManager"),
+                    //    new Microsoft.ServiceFabric.Services.Client.ServicePartitionKey(
+                    //            rnd.Next(0, 1023)));
+
+                    //var killMe = await proxy.Archive(this.GetActorReference().ActorId.GetGuidId());
+                }
+                catch (Exception ex)
+                {
+                }
+            }
+        }
+
+        public async Task ProcessWorkflow()
+        {
+            Debug.WriteLine("PosDeviceSimulation ProcessWorkflowEntered");
+
+            switch (_Machine.State)
+            {
+                case PosDeviceSimulationStateType.Idle:
+                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.CreateConsumer);
+                    break;
+
+                case PosDeviceSimulationStateType.CheckoutPendingQueued:
+                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.ProcessCheckoutPending);
+                    break;
+            }
+        }
+
+        public async Task ReceiveReminderAsync(string reminderName, byte[] state, TimeSpan dueTime, TimeSpan period)
+        {
+            try
+            {
+                ActorEventSource.Current.ActorMessage(this, $"{nameof(PosDeviceSimulationActor)} {Id} reminder recieved.");
+
+                switch (reminderName)
+                {
+                    case KillMeReminderKey:
+                        await ProcessKillMe();
+                        break;
+
+                    case WorkflowReminderKey:
+                        await ProcessWorkflow();
+                        break;
+                }
+            }
+
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+            }
+        }
 
         #region Create
 
-        private Task<bool> CanCreate(CancellationToken cancellationToken)
-        {
-            Debug.Assert(state == machine.State);
-            return Task.FromResult(machine.CanFire(PosDeviceSimulationTriggerType.Create));
-        }
-
         private async Task OnCreated()
         {
-            if (!this.stateFlags.HasFlag(PosDeviceSimulationStateType.Created))
+            if (!this.stateFlags.HasFlag(PosDeviceSimulationStateType.ActorCreated))
             {
                 // Only way to clean up the Actor Instance so do it first
-                await RegisterKillMeReminder();
+                //await RegisterKillMeReminder();
 
-                this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.Created;
+                this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.ActorCreated;
 
-                Debug.Assert(state == machine.State);
-
-                this._PosDevice = new PosDevice();
-
-                await AddOrUpdateEntityStateAsync();
+                await SetStateAsync();
                 await StateManager.SaveStateAsync();
             }
         }
 
         #endregion Create
 
-        #region Initialize
-
-        private Task<bool> CanInitialize(CancellationToken cancellationToken)
+        private async Task CreateToInitialized(string posDeviceApiLicenseCode, List<ApiLicenseDisplay> applicationLicenses, PosDeviceModes posDeviceModes)
         {
-            Debug.Assert(state == machine.State);
-            return Task.FromResult(machine.CanFire(PosDeviceSimulationTriggerType.Initialize));
+            await StateManager.TryAddStateAsync(PosDeviceApiLicenseCodeKey, posDeviceApiLicenseCode);
+            await StateManager.TryAddStateAsync(AppApiLicensesKey, applicationLicenses);
+            await StateManager.TryAddStateAsync(PosDeviceModeKey, posDeviceModes);
+
+            await RegisterWorkflowReminder();
+
+            await SetStateAsync();
+
+            await _Machine.FireAsync(PosDeviceSimulationTriggerType.GoIdle);
         }
 
-        private async Task CatchAll()
-        {
-            await Task.Delay(1);
-        }
+        //private async Task OnInitialized(string appApiLicenseCode)
+        //{
+        //    this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.Idle;
 
-        private async Task OtherToInitialized()
-        {
-            await Task.Delay(1);
-        }
+        //    await SetStateAsync();
 
-        private async Task CreateToInitialized()
-        {
-            await Task.Delay(1);
-        }
-
-        private async Task OnInitialized(string appApiLicenseCode)
-        {
-            this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.Initialized;
-
-            // map the values
-
-            // mcp - sneek the app license into the Player.Data just cause its convenient state
-            this._PosDevice.DeviceDescription = appApiLicenseCode;
-
-            await AddOrUpdateEntityStateAsync();
-
-            ActorEventSource.Current.ActorMessage(this, $"Actor [{this.GetActorReference().ActorId.GetGuidId()}] initialized.");
-        }
-
-        #endregion Initialize
+        //    ActorEventSource.Current.ActorMessage(this, $"Actor [{this.GetActorReference().ActorId.GetGuidId()}] initialized.");
+        //}
 
         #region Register
 
-        private Task<bool> CanRegister(CancellationToken cancellationToken)
-        {
-            Debug.Assert(state == machine.State);
-            return Task.FromResult(machine.CanFire(PosDeviceSimulationTriggerType.Registering));
-        }
+        //private async Task OnRegistering()
+        //{
+        //    if (!this.stateFlags.HasFlag(PosDeviceSimulationStateType.Registering))
+        //    {
+        //        this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.Registering;
 
-        private async Task OnRegistering()
-        {
-            if (!this.stateFlags.HasFlag(PosDeviceSimulationStateType.Registering))
-            {
-                this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.Registering;
+        //        await SetStateAsync();
+        //    }
+        //}
 
-                Debug.Assert(state == machine.State);
+        //private async Task OnRegistered()
+        //{
+        //    if (!this.stateFlags.HasFlag(PosDeviceSimulationStateType.Registered))
+        //    {
+        //        this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.Registered;
 
-                // call register api's
-
-
-
-
-
-
-
-                await AddOrUpdateEntityStateAsync();
-
-
-            }
-        }
-
-        private async Task OnRegistered()
-        {
-            if (!this.stateFlags.HasFlag(PosDeviceSimulationStateType.Registered))
-            {
-                this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.Registered;
-
-                Debug.Assert(state == machine.State);
-
-                this._PosDevice.CreatedOn = DateTimeOffset.UtcNow;
-
-                await AddOrUpdateEntityStateAsync();
-            }
-        }
+        //        await SetStateAsync();
+        //    }
+        //}
 
         #endregion Cancel
 
-        #region TxStart
+        //#region TxStart
 
-        private Task<bool> CanTxStart(CancellationToken cancellationToken)
-        {
-            Debug.Assert(state == machine.State);
-            return Task.FromResult(machine.CanFire(PosDeviceSimulationTriggerType.TxStart));
-        }
+        //private Task<bool> CanTxStart(CancellationToken cancellationToken)
+        //{
+        //    Debug.Assert(state == _Machine.State);
+        //    return Task.FromResult(_Machine.CanFire(PosDeviceSimulationTriggerType.TxStart));
+        //}
 
-        private async Task OnTxStart(string appApiLicenseCode)
-        {
-            if (!this.stateFlags.HasFlag(PosDeviceSimulationStateType.TxStarted))
-            {
-                this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.TxStarted;
+        //private async Task OnTxStart(string appApiLicenseCode)
+        //{
+        //    if (!this.stateFlags.HasFlag(PosDeviceSimulationStateType.TxStarted))
+        //    {
+        //        this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.TxStarted;
 
-                Debug.Assert(state == machine.State);
+        //        Debug.Assert(state == _Machine.State);
                 
-                // instantiate ConsumerActor and play a game
+        //        // instantiate ConsumerActor and play a game
 
 
 
 
 
 
-                await AddOrUpdateEntityStateAsync();
+        //        await AddOrUpdateEntityStateAsync();
 
-                //await this.machine.Activate(PosDeviceSimulationStateType.TxStarted;
-            }
-        }
+        //        //await this.machine.Activate(PosDeviceSimulationStateType.TxStarted;
+        //    }
+        //}
 
-        private async Task OnTxStarted()
-        {
-            if (!this.stateFlags.HasFlag(PosDeviceSimulationStateType.Registered))
-            {
-                this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.Registered;
+        //private async Task OnTxStarted()
+        //{
+        //    if (!this.stateFlags.HasFlag(PosDeviceSimulationStateType.Registered))
+        //    {
+        //        this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.Registered;
 
-                Debug.Assert(state == machine.State);
+        //        Debug.Assert(state == _Machine.State);
 
-                this._PosDevice.CreatedOn = DateTimeOffset.UtcNow;
+        //        this._PosDevice.CreatedOn = DateTimeOffset.UtcNow;
 
-                await AddOrUpdateEntityStateAsync();
-            }
-        }
+        //        await AddOrUpdateEntityStateAsync();
+        //    }
+        //}
 
-        #endregion Cancel
-
-        
-        
+        //#endregion Cancel
 
         private Uri GetFullUri(string fragment)
         {
@@ -601,8 +445,13 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             Uri requestUri = GetFullUri("api/v3/player/registration");
             HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
 
+            List<ApiLicenseDisplay> codes = await StateManager.GetStateAsync<List<ApiLicenseDisplay>>(AppApiLicensesKey);
+
+            string appApiLicenseCode = codes.First().Code;
+
             //httpreq.Headers.Add("Lazlo-SimulationLicenseCode", SimulationLicenseCode);
             //httpreq.Headers.Add("Lazlo-AuthorityLicenseCode", AuthorityLicenseCode);
+            httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
             httpreq.Headers.Add("lazlo-correlationrefId", req.CorrelationRefId.ToString());
 
             string json = JsonConvert.SerializeObject(req);
@@ -626,23 +475,99 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
                 IConsumerSimulationActor consumerActor = ActorProxy.Create<IConsumerSimulationActor>(consumerActorId, ConsumerServiceUri);
 
-                await consumerActor.InitializeAsync(statusResponse.Data.ConsumerLicenseCode, Id.GetGuidId()).ConfigureAwait(false);
+                await consumerActor.InitializeAsync(appApiLicenseCode, statusResponse.Data.ConsumerLicenseCode, Id.GetGuidId()).ConfigureAwait(false);
+
+                await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumer);
             }
 
             else
             {
-                if (age >= 18)
-                {
-                    throw new CorrelationException($"Player registration failed: {message.StatusCode} {responseJson}") { CorrelationRefId = req.CorrelationRefId };
-                }
+                // This will reset the state machine and cause the operation to be retried on the next loop
+                await _Machine.FireAsync(PosDeviceSimulationTriggerType.GoIdle);
 
-                WriteTimedDebug("Player not registered due to age restriction");
+                //if (age >= 18)
+                //{
+                //    throw new CorrelationException($"Player registration failed: {message.StatusCode} {responseJson}") { CorrelationRefId = req.CorrelationRefId };
+                //}
+
+                //WriteTimedDebug("Player not registered due to age restriction");
             }
         }
 
         private void WriteTimedDebug(string message)
         {
             Debug.WriteLine($"{DateTimeOffset.Now}: {message}");
+        }
+
+        public async Task EnqueueCheckoutCompletePending(string checkoutSessionLicenseCode)
+        {
+            try
+            {
+                await _Machine.FireAsync(_CheckoutPendingTrigger, checkoutSessionLicenseCode);
+            }
+
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                throw;
+            }
+        }
+
+        private async Task WaitingForConsumerToQueueCheckoutPending(string checkoutSessionLicenseCode)
+        {
+            await StateManager.SetStateAsync(CheckoutSessionLicenseCodeKey, checkoutSessionLicenseCode);
+        }
+
+        private async Task CheckoutCompletePendingAsync()
+        {
+            string checkoutSessionLicenseCode = await StateManager.GetStateAsync<string>(CheckoutSessionLicenseCodeKey);
+
+            Uri requestUri = GetFullUri("api/v3/shopping/checkout/complete/pending");
+
+            SmartRequest<CheckoutCompletePendingRequest> req = new SmartRequest<CheckoutCompletePendingRequest>
+            {
+                CreatedOn = DateTimeOffset.UtcNow,
+                Data = new CheckoutCompletePendingRequest
+                {
+                    CheckoutSessionLicenseCode = checkoutSessionLicenseCode,
+                },
+                Latitude = 34.072846D,
+                Longitude = -84.190285D,
+                Uuid = "A8C1048F-5A2B-4953-9C71-36581827AFE1"   // Is this even used anymore?
+            };
+
+            string json = JsonConvert.SerializeObject(req);
+
+            List<ApiLicenseDisplay> codes = await StateManager.GetStateAsync<List<ApiLicenseDisplay>>(AppApiLicensesKey);
+
+            string appApiLicenseCode = codes.First().Code;
+
+            HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
+
+            string posDeviceApiLicenseCode = await StateManager.GetStateAsync<string>(PosDeviceApiLicenseCodeKey).ConfigureAwait(false);
+
+            httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
+            //httpreq.Headers.Add("lazlo-apilicensecode", posDeviceApiLicenseCode); // 2018.10.10 What header do we send the posDeviceCode in?
+
+            httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+            DateTimeOffset opStart = DateTimeOffset.UtcNow;
+
+            HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
+
+            string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+            var response = JsonConvert.DeserializeObject<SmartResponse<CheckoutPendingResponse>>(responseJson);
+
+            if (message.IsSuccessStatusCode)
+            {
+                Debug.WriteLine("Unlikely");
+            }
+
+            else
+            {
+                Debug.WriteLine("That's what I thought");
+            }
         }
 
         //private async Task SetRetailer()

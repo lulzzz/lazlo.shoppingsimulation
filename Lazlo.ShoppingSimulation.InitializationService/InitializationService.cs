@@ -57,6 +57,8 @@ namespace Lazlo.ShoppingSimulation.InitializationService
 
                     await posDeviceActor.InitializeAsync(apiLicenseDisplay.Code, config.ApplicationLicenses, PosDeviceModes.PosDeviceScans);
 
+                    await posDeviceActor.InitializeAsync(apiLicenseDisplay.Code, config.ApplicationLicenses, PosDeviceModes.PosDeviceScans);
+
                     break;
                 }
             }

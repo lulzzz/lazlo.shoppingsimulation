@@ -29,22 +29,27 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
     ///  - None: State is kept in memory only and not replicated.
     /// </remarks>
     [StatePersistence(StatePersistence.Persisted)]
-    internal class ConsumerSimulationActor : Actor, IConsumerSimulationActor, IRemindable
+    public partial class ConsumerSimulationActor : Actor, IConsumerSimulationActor, IRemindable
     {
         const string PosDeviceActorIdKey = "PosDeviceActorIdKey";
         const string InitializedKey = "InitializedKey";
         const string ConsumerLicenseCodeKey = "ConsumerLicenseCodeKey";
+        const string AppApiLicenseCodeKey = "AppApiLicenseCodeKey";
+        const string ActionLicenseCodeKey = "ActionLicenseCodeKey";
         const string StartupStatusKey = "StartupStatusKey";
         const string ChannelGroupsKey = "ChannelGroupsKey";
-        const string ReminderName = "ReminderName";
+        const string KillMeReminderKey = "KillMeReminderKey";
+        const string WorkflowReminderKey = "WorkflowReminderKey";
 
-        const bool _UseLocalHost = false;
+        const bool _UseLocalHost = true;
         string _UriBase = "devshopapi.services.32point6.com";
 
         protected HttpClient _HttpClient = new HttpClient();
 
-        readonly string AuthorityLicenseCode = "0rsVpol+brlnpe@m@?K1y?WA$Cw?v*hbE[hv(5u*A5zr3s$>nsgIQVchetwG&C++$-l7&l6#vD(P%1RZCGpc^petQnH7{{3Z(n0WN#lZ]cK6yof!*2LdzsLZ?Zr+lo5J+Hrz[NKs5ZGzjYO4cCX4=zUs:227ixF";
-        readonly string SimulationLicenseCode = "0sywVlnRzumnD]{q^}X6v[gciix6J9xjVydm0iYNlpkr:fLTS(AwHV(ydQMBJ#xpe3/TKP1K@+u@Ou@r?#yOYy*8+BK(NeS{AL)]Wj5*0G8)(Osn[}m-8]2o&Fv]N=HJffMp!}euLYdFXwbl!AX:LxPHSi5hbuL";
+        static readonly Uri PosDeviceServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/PosDeviceSimulationActorService");
+
+        //readonly string AuthorityLicenseCode = "0rsVpol+brlnpe@m@?K1y?WA$Cw?v*hbE[hv(5u*A5zr3s$>nsgIQVchetwG&C++$-l7&l6#vD(P%1RZCGpc^petQnH7{{3Z(n0WN#lZ]cK6yof!*2LdzsLZ?Zr+lo5J+Hrz[NKs5ZGzjYO4cCX4=zUs:227ixF";
+        //readonly string SimulationLicenseCode = "0sywVlnRzumnD]{q^}X6v[gciix6J9xjVydm0iYNlpkr:fLTS(AwHV(ydQMBJ#xpe3/TKP1K@+u@Ou@r?#yOYy*8+BK(NeS{AL)]Wj5*0G8)(Osn[}m-8]2o&Fv]N=HJffMp!}euLYdFXwbl!AX:LxPHSi5hbuL";
 
         /// <summary>
         /// Initializes a new instance of ConsumerSimulationActor
@@ -56,45 +61,147 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         {
         }
 
-        public async Task InitializeAsync(string consumerLicenseCode, Guid posDeviceActorId)
+        protected override async Task OnActivateAsync()
         {
-            bool isInitialized = await StateManager.GetOrAddStateAsync<bool>(InitializedKey, false).ConfigureAwait(false);
-
-            if (isInitialized)
+            try
             {
-                return;
+                ConfigureStateMachine();
+
+                if (_StateMachine.State == ConsumerSimulationStateType.None)
+                {
+                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.CreateActor);
+                }
             }
 
-            await RegisterReminderAsync(ReminderName, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5)).ConfigureAwait(false);
-            
-            await StateManager.SetStateAsync(PosDeviceActorIdKey, posDeviceActorId).ConfigureAwait(false);
-            await StateManager.SetStateAsync(StartupStatusKey, "ChannelGroupsPending").ConfigureAwait(false);
-            await StateManager.SetStateAsync(ConsumerLicenseCodeKey, consumerLicenseCode).ConfigureAwait(false);
-            await StateManager.SetStateAsync(InitializedKey, true).ConfigureAwait(false);
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                throw;
+            }
+        }
 
-            Debug.WriteLine("Consumer Initialized");
+        public async Task InitializeAsync(string appApiLicenseKey, string consumerLicenseCode, Guid posDeviceActorId)
+        {
+            try
+            {
+                if (_StateMachine.State == ConsumerSimulationStateType.ActorCreated)
+                {
+                    await _StateMachine.FireAsync(_InitializeTrigger, appApiLicenseKey, consumerLicenseCode, posDeviceActorId);
+                }
+
+                else
+                {
+                    ActorEventSource.Current.ActorMessage(this, $"{nameof(ConsumerSimulationActor)} already initialized.");
+                }
+            }
+
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                throw;
+            }
+        }
+
+        private async Task CreateToInitialized(string appApiLicenseKey, string consumerLicenseCode, Guid posDeviceActorId)
+        {
+            await RegisterReminderAsync(WorkflowReminderKey, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+
+            await StateManager.SetStateAsync(AppApiLicenseCodeKey, appApiLicenseKey).ConfigureAwait(false);
+            await StateManager.SetStateAsync(PosDeviceActorIdKey, posDeviceActorId).ConfigureAwait(false);
+            await StateManager.SetStateAsync(ConsumerLicenseCodeKey, consumerLicenseCode).ConfigureAwait(false);
+
+            await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.RetrieveChannelGroups);
+        }
+
+        private async Task ProcessKillMe()
+        {
+            if (_StateMachine.IsInState(ConsumerSimulationStateType.DeadManWalking))
+            {
+                try
+                {
+                    var rnd = new Random();
+
+                    //ICheckoutSessionManager proxy = ServiceProxy.Create<ICheckoutSessionManager>(
+                    //    new Uri("fabric:/Deploy.Lazlo.Checkout.Api/Lazlo.SrvcFbrc.Services.CheckoutSessionManager"),
+                    //    new Microsoft.ServiceFabric.Services.Client.ServicePartitionKey(
+                    //            rnd.Next(0, 1023)));
+
+                    //var killMe = await proxy.Archive(this.GetActorReference().ActorId.GetGuidId());
+                }
+                catch (Exception ex)
+                {
+                }
+            }
+        }
+
+        public async Task ProcessWorkflow()
+        {
+            Debug.WriteLine("ConsumerSimulation ProcessWorkflowEntered");
+
+            switch (_StateMachine.State)
+            {
+                case ConsumerSimulationStateType.RetrievingChannelGroups:
+                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.RetrieveChannelGroups);
+                    break;
+
+                //case ConsumerSimulationStateType.CheckingOut:           // Checkout must have failed, try again?
+                case ConsumerSimulationStateType.ReadyToCheckout:
+                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.Checkout);
+                    break;
+
+                case ConsumerSimulationStateType.PollingTickets:
+                    await RetrieveCheckoutStatus();
+                    break;
+            }
+        }
+
+        public async Task RetrieveCheckoutStatus()
+        {
+            Uri requestUri = GetFullUri("api/v1/shopping/checkout/status");
+
+            HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Get, requestUri);
+
+            string appAPiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
+            string consumerLicenseCode = await StateManager.GetStateAsync<string>(ConsumerLicenseCodeKey).ConfigureAwait(false);
+            string checkoutSessionLicenseCode = await StateManager.GetStateAsync<string>(ActionLicenseCodeKey).ConfigureAwait(false);
+
+            httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
+            httpreq.Headers.Add("lazlo-apilicensecode", appAPiLicenseCode);
+            httpreq.Headers.Add("lazlo-actionlicensecode", checkoutSessionLicenseCode);
+
+            var message = await _HttpClient.SendAsync(httpreq);
+
+            string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+            if (message.IsSuccessStatusCode)
+            {
+                var statusResponse = JsonConvert.DeserializeObject<SmartResponse<CheckoutStatusResponse>>(responseJson);
+            }
+
+            else
+            {
+
+            }
         }
 
         public async Task ReceiveReminderAsync(string reminderName, byte[] state, TimeSpan dueTime, TimeSpan period)
         {
             try
             {
-                string status = await StateManager.GetStateAsync<string>(StartupStatusKey);
+                ActorEventSource.Current.ActorMessage(this, $"{nameof(ConsumerSimulationActor)} {Id} reminder recieved.");
 
-                switch (status)
+                switch (reminderName)
                 {
-                    case "ChannelGroupsPending":
-                        await RetrieveChannelGroupAsync().ConfigureAwait(false);
-
-                        await StateManager.SetStateAsync(StartupStatusKey, "PurchasePending").ConfigureAwait(false);
-
+                    case KillMeReminderKey:
+                        await ProcessKillMe();
                         break;
 
-                    case "PurchasePending":
-                        Debug.WriteLine($"Consumer Ready to Purchase {this.Id}");
+                    case WorkflowReminderKey:
+                        await ProcessWorkflow();
                         break;
                 }
             }
+
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
@@ -133,7 +240,10 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
             string consumerLicenseCode = await StateManager.GetStateAsync<string>(ConsumerLicenseCodeKey).ConfigureAwait(false);
 
+            string appAPiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey);
+
             httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
+            httpreq.Headers.Add("lazlo-apilicensecode", appAPiLicenseCode);
             httpreq.Headers.Add("lazlo-correlationrefId", correlationRefId.ToString());
 
             HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
@@ -147,6 +257,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                 List<ChannelGroupDisplay> channelGroups = response.Data.SelectMany(z => z.ChannelGroups).ToList();
 
                 await StateManager.SetStateAsync(ChannelGroupsKey, channelGroups).ConfigureAwait(false);
+
+                await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.GoShopping);
             }
 
             else
@@ -193,24 +305,11 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
 
             string consumerLicenseCode = await StateManager.GetStateAsync<string>(ConsumerLicenseCodeKey).ConfigureAwait(false);
+            string appApiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
 
-            //httpreq.Headers.Add("Lazlo-SimulationLicenseCode", SimulationLicenseCode);
-            //httpreq.Headers.Add("Lazlo-AuthorityLicenseCode", AuthorityLicenseCode);
+            httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
             httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
             httpreq.Headers.Add("lazlo-correlationrefId", checkoutRequest.CorrelationRefId.ToString());
-            //httpreq.Headers.Add("Lazlo-BrandLicenseCode", _BrandLicenseCode);
-
-            //if (ConfigurationHelper.GetActiveConfig().Equals("dev", StringComparison.CurrentCultureIgnoreCase))
-            //{
-            //    httpreq.Headers.Add("lazlo-apilicensecode", "0Ul?Fol+brlnpe@m@?K1y?WA$Cw?v*hbE[hv(5u*A5zr3s$>nsgIQVchetv]Xjc85PDV)#ryFU8WOg>NH2}YoD]Lr9*w{AIkwtp(6?T-8.mc5wc{pV0OfHf[t&j,<!b{fJ?wYt5fGp2y&b8z&VgxXHBKb{cbD5C");
-            //}
-
-            //else
-            //{
-            //    httpreq.Headers.Add("lazlo-apilicensecode", "0Ul?Tq.H*6mnW9bwlH@&B.:J>sW,6(o!e!GBAIE*Ax4-1wLWCdC5PDBh+uf2rVlsW0-8dWUDb$juMu?k&W9O:8T2m=h92,v]I/rQK?0%d[O=v1cm6-3v$${+?gpLbTFOtb?7cDj(I.*)H#CDJQ:0%nX6y=ea6XQ");
-            //}
-
-            //httpreq.Headers.Add("lazlo-apilicensecode", _SimulationApiLicenseCode);
 
             string json = JsonConvert.SerializeObject(checkoutRequest);
 
@@ -227,6 +326,18 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             if (message.IsSuccessStatusCode)
             {
                 var response = JsonConvert.DeserializeObject<SmartResponse<CheckoutResponse>>(responseJson);
+
+                await StateManager.SetStateAsync(ActionLicenseCodeKey, response.Data.CheckoutLicenseCode);
+
+                Guid posId = await StateManager.GetStateAsync<Guid>(PosDeviceActorIdKey);
+
+                ActorId posActorId = new ActorId(posId);
+
+                IPosDeviceSimulationActor posActor = ActorProxy.Create<IPosDeviceSimulationActor>(posActorId, PosDeviceServiceUri);
+
+                await posActor.EnqueueCheckoutCompletePending(response.Data.CheckoutLicenseCode);
+
+                await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.PollTickets);
             }
 
             else
