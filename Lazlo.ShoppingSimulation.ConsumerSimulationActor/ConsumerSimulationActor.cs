@@ -36,6 +36,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         const string ConsumerLicenseCodeKey = "ConsumerLicenseCodeKey";
         const string AppApiLicenseCodeKey = "AppApiLicenseCodeKey";
         const string ActionLicenseCodeKey = "ActionLicenseCodeKey";
+        const string PosDeviceModeKey = "PosDeviceModeKey";
         const string StartupStatusKey = "StartupStatusKey";
         const string ChannelGroupsKey = "ChannelGroupsKey";
         const string KillMeReminderKey = "KillMeReminderKey";
@@ -80,13 +81,19 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             }
         }
 
-        public async Task InitializeAsync(string appApiLicenseKey, string consumerLicenseCode, Guid posDeviceActorId)
+        public async Task InitializeAsync(string appApiLicenseKey, string consumerLicenseCode, Guid posDeviceActorId, PosDeviceModes posDeviceMode)
         {
             try
             {
+                object[] args = new object[4];
+                args[0] = appApiLicenseKey;
+                args[1] = consumerLicenseCode;
+                args[2] = posDeviceActorId;
+                args[3] = posDeviceMode;
+
                 if (_StateMachine.State == ConsumerSimulationStateType.ActorCreated)
                 {
-                    await _StateMachine.FireAsync(_InitializeTrigger, appApiLicenseKey, consumerLicenseCode, posDeviceActorId);
+                    await _StateMachine.FireAsync(_InitializeTrigger, args);
                 }
 
                 else
@@ -102,13 +109,21 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             }
         }
 
-        private async Task CreateToInitialized(string appApiLicenseKey, string consumerLicenseCode, Guid posDeviceActorId)
+        private async Task CreateToInitialized(object[] args)
         {
+            string appApiLicenseKey = (string)args[0];
+            string consumerLicenseCode = (string)args[1];
+            Guid posDeviceActorId = (Guid)args[2];
+            PosDeviceModes deviceMode = (PosDeviceModes)args[3];
+
+            Debug.WriteLine("CreateToInitialized Entered");
+
             await RegisterReminderAsync(WorkflowReminderKey, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(5)).ConfigureAwait(false);
 
             await StateManager.SetStateAsync(AppApiLicenseCodeKey, appApiLicenseKey).ConfigureAwait(false);
             await StateManager.SetStateAsync(PosDeviceActorIdKey, posDeviceActorId).ConfigureAwait(false);
-            await StateManager.SetStateAsync(ConsumerLicenseCodeKey, consumerLicenseCode).ConfigureAwait(false);
+            await StateManager.SetStateAsync(ConsumerLicenseCodeKey, consumerLicenseCode).ConfigureAwait(false); 
+            await StateManager.SetStateAsync(PosDeviceModeKey, deviceMode).ConfigureAwait(false);
 
             await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.RetrieveChannelGroups);
         }
@@ -269,6 +284,14 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
         private async Task CreateTicketCheckoutRequest()
         {
+            Guid posId = await StateManager.GetStateAsync<Guid>(PosDeviceActorIdKey).ConfigureAwait(false);
+
+            ActorId posActorId = new ActorId(posId);
+
+            IPosDeviceSimulationActor posActor = ActorProxy.Create<IPosDeviceSimulationActor>(posActorId, PosDeviceServiceUri);
+
+            string checkoutLicenseCode = await posActor.RetrieveCheckoutLicenseCode().ConfigureAwait(false);
+
             SimulationType simulationType = SimulationType.Player;
 
             var channelSelections = await CreateChannelSelections();
@@ -278,16 +301,19 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                 return;
             }
 
-            var checkoutRequest = new SmartRequest<ChannelCheckoutRequest>
+            var checkoutRequest = new SmartRequest<CartCheckoutRequest>
             {
                 CorrelationRefId = Guid.NewGuid(),
                 CreatedOn = DateTimeOffset.UtcNow,
                 Latitude = 34.072846D,
                 Longitude = -84.190285D,
                 Uuid = "A8C1048F-5A2B-4953-9C71-36581827AFE1",
-                Data = new ChannelCheckoutRequest
+                Data = new CartCheckoutRequest
                 {
-                    ChannelRequests = channelSelections,
+                    Cart = new Cart
+                    {
+                        ChannelRequests = channelSelections                        
+                    },
                     //ChannelSelections = channelSelections,
                     //RetailerRefId = retailerRefId,
                     // this way we differentiate from client simulation and actor simulation
@@ -300,7 +326,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                 }
             };
 
-            Uri requestUri = GetFullUri("api/v1/shopping/checkout/channel");
+            Uri requestUri = GetFullUri("api/v1/shopping/checkout/cart/consumer");
 
             HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
 
@@ -309,6 +335,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
             httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
             httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
+            httpreq.Headers.Add("lazlo-txlicensecode", checkoutLicenseCode);
             httpreq.Headers.Add("lazlo-correlationrefId", checkoutRequest.CorrelationRefId.ToString());
 
             string json = JsonConvert.SerializeObject(checkoutRequest);
@@ -328,13 +355,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                 var response = JsonConvert.DeserializeObject<SmartResponse<CheckoutResponse>>(responseJson);
 
                 await StateManager.SetStateAsync(ActionLicenseCodeKey, response.Data.CheckoutLicenseCode);
-
-                Guid posId = await StateManager.GetStateAsync<Guid>(PosDeviceActorIdKey);
-
-                ActorId posActorId = new ActorId(posId);
-
-                IPosDeviceSimulationActor posActor = ActorProxy.Create<IPosDeviceSimulationActor>(posActorId, PosDeviceServiceUri);
-
+                
                 await posActor.EnqueueCheckoutCompletePending(response.Data.CheckoutLicenseCode);
 
                 await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.PollTickets);
@@ -367,6 +388,22 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         private void WriteTimedDebug(string message)
         {
             Debug.WriteLine($"{DateTimeOffset.Now}: {message}");
+        }
+
+        public async Task<string> RetrieveCheckoutLicenseCode()
+        {
+            throw new NotImplementedException();
+
+            try
+            {
+                Uri requestUri = GetFullUri("api/v1/shopping/consumer/checkout/create");
+            }
+
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                throw;
+            }
         }
     }
 }

@@ -13,7 +13,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
 		private StateMachine<ConsumerSimulationStateType, ConsumerSimulationWorkflowActions> _StateMachine;
 
-        private StateMachine<ConsumerSimulationStateType, ConsumerSimulationWorkflowActions>.TriggerWithParameters<string, string, Guid> _InitializeTrigger;
+        private StateMachine<ConsumerSimulationStateType, ConsumerSimulationWorkflowActions>.TriggerWithParameters<object[]> _InitializeTrigger;
 
         private void ConfigureStateMachine()
         {
@@ -21,7 +21,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                 () => StateManager.GetOrAddStateAsync(StateKey, ConsumerSimulationStateType.None).Result,
                 async (state) => await StateManager.SetStateAsync(StateKey, state));
 
-            _InitializeTrigger = _StateMachine.SetTriggerParameters<string, string, Guid>(ConsumerSimulationWorkflowActions.InitializeActor);
+            _InitializeTrigger = _StateMachine.SetTriggerParameters<object[]>(ConsumerSimulationWorkflowActions.InitializeActor);
 
             _StateMachine.OnTransitionedAsync(LogTransitionAsync);
 
@@ -29,10 +29,15 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                 .Permit(ConsumerSimulationWorkflowActions.CreateActor, ConsumerSimulationStateType.ActorCreated);
 
             _StateMachine.Configure(ConsumerSimulationStateType.ActorCreated)
-                .Permit(ConsumerSimulationWorkflowActions.InitializeActor, ConsumerSimulationStateType.ActorInitializing);
+                .Permit(ConsumerSimulationWorkflowActions.InitializeActor, ConsumerSimulationStateType.ActorInitializing)
+                .OnExitAsync(() =>
+                {
+                    Debug.WriteLine("Exiting Actor Created");
+                    return Task.CompletedTask;
+                });
 
             _StateMachine.Configure(ConsumerSimulationStateType.ActorInitializing)
-                .OnEntryFromAsync(_InitializeTrigger, async (a, b, c) => await CreateToInitialized(a, b, c))
+                .OnEntryFromAsync(_InitializeTrigger, async (a) => await CreateToInitialized(a))
                 .Permit(ConsumerSimulationWorkflowActions.RetrieveChannelGroups, ConsumerSimulationStateType.RetrievingChannelGroups);
 
             _StateMachine.Configure(ConsumerSimulationStateType.RetrievingChannelGroups)

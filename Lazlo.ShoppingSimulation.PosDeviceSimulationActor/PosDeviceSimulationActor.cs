@@ -475,7 +475,13 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
                 IConsumerSimulationActor consumerActor = ActorProxy.Create<IConsumerSimulationActor>(consumerActorId, ConsumerServiceUri);
 
-                await consumerActor.InitializeAsync(appApiLicenseCode, statusResponse.Data.ConsumerLicenseCode, Id.GetGuidId()).ConfigureAwait(false);
+                int modeSelection = random.Next(0, 2);
+
+                await consumerActor.InitializeAsync(
+                    appApiLicenseCode,
+                    statusResponse.Data.ConsumerLicenseCode,
+                    Id.GetGuidId(),
+                    modeSelection == 0 ? PosDeviceModes.ConsumerScans : PosDeviceModes.PosDeviceScans).ConfigureAwait(false);
 
                 await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumer);
             }
@@ -538,9 +544,9 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
             string json = JsonConvert.SerializeObject(req);
 
-            List<ApiLicenseDisplay> codes = await StateManager.GetStateAsync<List<ApiLicenseDisplay>>(AppApiLicensesKey);
+            //List<ApiLicenseDisplay> codes = await StateManager.GetStateAsync<List<ApiLicenseDisplay>>(AppApiLicensesKey);
 
-            string appApiLicenseCode = codes.First().Code;
+            //string appApiLicenseCode = codes.First().Code;
 
             HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
 
@@ -569,51 +575,46 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             }
         }
 
-        //private async Task SetRetailer()
-        //{
-        //    Uri requestUri = GetFullUri($"api/v2/retailers/display/bylocation/100/{_Latitude}/{_Longitude}");
+        public async Task<string> RetrieveCheckoutLicenseCode()
+        {
+            try
+            {
+                Uri requestUri = GetFullUri("api/v1/shopping/pos/checkout/create");
 
-        //    //SmartRequest<string> req = new SmartRequest<string>
-        //    //{
-        //    //    CorrelationRefId = Guid.NewGuid(),
-        //    //    CreatedOn = DateTimeOffset.UtcNow,
-        //    //    Data = null,
-        //    //    Latitude = _Latitude,
-        //    //    Longitude = _Longitude,
-        //    //    Uuid = Guid.NewGuid().ToString()
-        //    //};
+                HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
 
-        //    Guid correlationRefId = Guid.NewGuid();
+                string posDeviceApiLicenseCode = await StateManager.GetStateAsync<string>(PosDeviceApiLicenseCodeKey).ConfigureAwait(false);
 
-        //    HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Get, requestUri);
+                httpreq.Headers.Add("lazlo-apilicensecode", posDeviceApiLicenseCode);
 
-        //    httpreq.Headers.Add("Lazlo-SimulationLicenseCode", SimulationLicenseCode);
-        //    httpreq.Headers.Add("Lazlo-AuthorityLicenseCode", AuthorityLicenseCode);
-        //    httpreq.Headers.Add("Lazlo-CorrelationRefId", correlationRefId.ToString());
+                SmartRequest<object> req = new SmartRequest<object> { };
 
-        //    //string json = JsonConvert.SerializeObject(req);
+                string json = JsonConvert.SerializeObject(req);
 
-        //    //httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+                httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-        //    HttpResponseMessage message = await _Client.SendAsync(httpreq).ConfigureAwait(false);
+                HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
 
-        //    if (message.IsSuccessStatusCode)
-        //    {
-        //        string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
+                string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-        //        var response = JsonConvert.DeserializeObject<SmartResponse<List<RetailerDisplay<Beacon>>>>(responseJson);
+                SmartResponse<CheckoutResponseBase> response = JsonConvert.DeserializeObject<SmartResponse<CheckoutResponseBase>>(responseJson);
 
-        //        await StateManager.SetStateAsync(RetailerRefIdKey, response.Data.First().RetailerRefId).ConfigureAwait(false);
+                if (message.IsSuccessStatusCode)
+                {
+                    return response.Data.CheckoutLicenseCode;
+                }
 
-        //        Debug.WriteLine("Retailer Set");
-        //    }
+                else
+                {
+                    throw new Exception(response.Error.Message);
+                }
+            }
 
-        //    else
-        //    {
-        //        string err = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-        //        throw new CorrelationException($"SetRetailer failed: {message.StatusCode} {err}") { CorrelationRefId = correlationRefId };
-        //    }
-        //}
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                throw;
+            }
+        }
     }
 }
