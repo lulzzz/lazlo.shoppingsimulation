@@ -22,6 +22,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SolutionItems", "SolutionIt
 		Directory.Build.props = Directory.Build.props
 	EndProjectSection
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lazlo.ShoppingSimulation.ConsumerLineService", "Lazlo.ShoppingSimulation.ConsumerLineService\Lazlo.ShoppingSimulation.ConsumerLineService.csproj", "{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -78,6 +80,14 @@ Global
 		{6C9C07FB-88BA-4339-81E4-E84CDB89B514}.Release|Any CPU.Build.0 = Release|Any CPU
 		{6C9C07FB-88BA-4339-81E4-E84CDB89B514}.Release|x64.ActiveCfg = Release|Any CPU
 		{6C9C07FB-88BA-4339-81E4-E84CDB89B514}.Release|x64.Build.0 = Release|Any CPU
+		{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}.Debug|x64.Build.0 = Debug|Any CPU
+		{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}.Release|x64.ActiveCfg = Release|Any CPU
+		{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

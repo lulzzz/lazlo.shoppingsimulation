@@ -35,10 +35,10 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
             _Machine.Configure(PosDeviceSimulationStateType.Idle)
                 //.OnEntryFromAsync(_InitializeTrigger, async (a, b, c) => await CreateToInitialized(a, b, c))
-                .Permit(PosDeviceSimulationTriggerType.CreateConsumer, PosDeviceSimulationStateType.CreatingConsumer);
+                .Permit(PosDeviceSimulationTriggerType.GetNextInLine, PosDeviceSimulationStateType.NextInLine);
 
-            _Machine.Configure(PosDeviceSimulationStateType.CreatingConsumer)
-                .OnEntry(async () => await CreateConsumerAsync())
+            _Machine.Configure(PosDeviceSimulationStateType.NextInLine)
+                .OnEntry(async () => await GetNextInLine())
                 .Permit(PosDeviceSimulationTriggerType.WaitForConsumer, PosDeviceSimulationStateType.WaitingForConsumer)
                 .Permit(PosDeviceSimulationTriggerType.GoIdle, PosDeviceSimulationStateType.Idle);          // An error occurred creating the consumer, go back to idle, try again next loop
 
@@ -79,7 +79,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         CreateActor = 0,
         InitializeActor = 1,
         GoIdle = 2,
-        CreateConsumer = 4,
+        GetNextInLine = 4,
         WaitForConsumer = 8,
         QueueCheckoutPending = 16,
         ProcessCheckoutPending = 32
@@ -100,7 +100,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         ActorCreated = 1,
         ActorInitializing = 2,
         Idle = 4,
-        CreatingConsumer = 8,
+        NextInLine = 8,
         WaitingForConsumer = 16,
         CheckoutPendingQueued = 32,
         ProcessingCheckoutPending = 64,

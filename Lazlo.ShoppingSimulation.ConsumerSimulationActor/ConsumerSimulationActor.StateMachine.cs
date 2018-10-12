@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
+using Lazlo.ShoppingSimulation.Common;
 using Stateless;
 
 namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
@@ -13,7 +14,9 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
 		private StateMachine<ConsumerSimulationStateType, ConsumerSimulationWorkflowActions> _StateMachine;
 
-        private StateMachine<ConsumerSimulationStateType, ConsumerSimulationWorkflowActions>.TriggerWithParameters<object[]> _InitializeTrigger;
+        private StateMachine<ConsumerSimulationStateType, ConsumerSimulationWorkflowActions>.TriggerWithParameters<string, string> _InitializeTrigger;
+
+        private StateMachine<ConsumerSimulationStateType, ConsumerSimulationWorkflowActions>.TriggerWithParameters<Guid, PosDeviceModes> _AssignPosTrigger;
 
         private void ConfigureStateMachine()
         {
@@ -21,7 +24,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                 () => StateManager.GetOrAddStateAsync(StateKey, ConsumerSimulationStateType.None).Result,
                 async (state) => await StateManager.SetStateAsync(StateKey, state));
 
-            _InitializeTrigger = _StateMachine.SetTriggerParameters<object[]>(ConsumerSimulationWorkflowActions.InitializeActor);
+            _InitializeTrigger = _StateMachine.SetTriggerParameters<string, string>(ConsumerSimulationWorkflowActions.InitializeActor);
+            _AssignPosTrigger = _StateMachine.SetTriggerParameters<Guid, PosDeviceModes>(ConsumerSimulationWorkflowActions.AssignPos);
 
             _StateMachine.OnTransitionedAsync(LogTransitionAsync);
 
@@ -37,16 +41,20 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                 });
 
             _StateMachine.Configure(ConsumerSimulationStateType.ActorInitializing)
-                .OnEntryFromAsync(_InitializeTrigger, async (a) => await CreateToInitialized(a))
+                .OnEntryFromAsync(_InitializeTrigger, async (a, b) => await CreateToInitialized(a, b))
                 .Permit(ConsumerSimulationWorkflowActions.RetrieveChannelGroups, ConsumerSimulationStateType.RetrievingChannelGroups);
 
             _StateMachine.Configure(ConsumerSimulationStateType.RetrievingChannelGroups)
                 .OnEntryAsync(async () => await RetrieveChannelGroupAsync())
-				.Permit(ConsumerSimulationWorkflowActions.GoShopping, ConsumerSimulationStateType.ReadyToCheckout);
+				.Permit(ConsumerSimulationWorkflowActions.GetInLine, ConsumerSimulationStateType.WaitingInLine);
 
-            _StateMachine.Configure(ConsumerSimulationStateType.ReadyToCheckout)
-				.Permit(ConsumerSimulationWorkflowActions.Checkout, ConsumerSimulationStateType.CheckingOut);
+            _StateMachine.Configure(ConsumerSimulationStateType.WaitingInLine)
+                .Permit(ConsumerSimulationWorkflowActions.AssignPos, ConsumerSimulationStateType.PosAssigned);
 
+            _StateMachine.Configure(ConsumerSimulationStateType.PosAssigned)
+                .OnEntryFromAsync(_AssignPosTrigger, async (a, b) => await AssignPosAsync(a, b))
+                .Permit(ConsumerSimulationWorkflowActions.Checkout, ConsumerSimulationStateType.CheckingOut);
+            
             _StateMachine.Configure(ConsumerSimulationStateType.CheckingOut)
                 .OnEntryAsync(async () => await CreateTicketCheckoutRequest())
 				.Permit(ConsumerSimulationWorkflowActions.PollTickets, ConsumerSimulationStateType.PollingTickets);
@@ -88,7 +96,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         CreateActor = 0,
         InitializeActor = 1,
         RetrieveChannelGroups = 2,
-		GoShopping,
+		GetInLine,
+        AssignPos,
 		Checkout,
 		PollTickets		
     }
@@ -100,9 +109,10 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         ActorCreated = 1,
         ActorInitializing = 2,
 		RetrievingChannelGroups = 4,
-		ReadyToCheckout = 8,
-		CheckingOut = 16,
-		PollingTickets = 32,
+		WaitingInLine = 8,
+        PosAssigned = 16,
+		CheckingOut = 32,
+		PollingTickets = 64,
         DeadManWalking = 8196
     }
 }

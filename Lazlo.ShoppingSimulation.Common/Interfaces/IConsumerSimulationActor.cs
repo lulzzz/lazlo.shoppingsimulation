@@ -13,8 +13,10 @@ namespace Lazlo.ShoppingSimulation.Common.Interfaces
     /// </summary>
     public interface IConsumerSimulationActor : IActor
     {
-        Task InitializeAsync(string appApiLicenseKey, string consumerLicenseCode, Guid posDeviceActorId, PosDeviceModes posDeviceMode);
+        Task InitializeAsync(string appApiLicenseKey, string consumerLicenseCode);
 
         Task<string> RetrieveCheckoutLicenseCode();
+
+        Task BeginTransaction(Guid posDeviceActorId, PosDeviceModes posDeviceMode);
     }
 }

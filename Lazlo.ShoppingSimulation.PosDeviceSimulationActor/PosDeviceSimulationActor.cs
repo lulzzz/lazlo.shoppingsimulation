@@ -19,6 +19,8 @@ using Lazlo.Gaming.Random;
 using Lazlo.Common.Requests;
 using Stateless;
 using Lazlo.Common.Enumerators;
+using Microsoft.ServiceFabric.Services.Remoting.Client;
+using Microsoft.ServiceFabric.Services.Client;
 
 namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 {
@@ -34,6 +36,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
     public partial class PosDeviceSimulationActor : Actor, IPosDeviceSimulationActor, IRemindable
     {
         static readonly Uri ConsumerServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/ConsumerSimulationActorService");
+        static readonly Uri LineServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/Lazlo.ShoppingSimulation.ConsumerLineService");
 
         const bool _UseLocalHost = true;
         string _UriBase = "devshopapi.services.32point6.com";
@@ -58,7 +61,6 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
         private PosDeviceSimulationStateType state;
         private PosDeviceSimulationStateType stateFlags;
-        
         
         private StateMachine<PosDeviceSimulationStateType, PosDeviceSimulationTriggerType>.TriggerWithParameters<string> txStartTrigger;
 
@@ -245,7 +247,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             switch (_Machine.State)
             {
                 case PosDeviceSimulationStateType.Idle:
-                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.CreateConsumer);
+                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.GetNextInLine);
                     break;
 
                 case PosDeviceSimulationStateType.CheckoutPendingQueued:
@@ -400,105 +402,137 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             }
         }
 
-        private static byte[] GetImageBytes(string imageName)
+        private async Task GetNextInLine()
         {
-            using (Stream stream = typeof(PosDeviceSimulationActor).Assembly.GetManifestResourceStream($"Lazlo.ShoppingSimulation.PosDeviceSimulationActor.Images.{imageName}"))
+            try
             {
-                byte[] buffer = new byte[stream.Length];
+                Random random = new Random();
 
-                stream.Read(buffer, 0, buffer.Length);
+                int partitionIndex = random.Next(0, 4);
 
-                return buffer;
-            }
-        }
+                ServicePartitionKey servicePartitionKey = new ServicePartitionKey(partitionIndex);
 
-        private async Task CreateConsumerAsync()
-        {
-            byte[] selfieBytes = GetImageBytes("christina.png");
+                ILineService proxy = ServiceProxy.Create<ILineService>(LineServiceUri, servicePartitionKey);
 
-            string selfieBase64 = Convert.ToBase64String(selfieBytes);
+                List<ApiLicenseDisplay> codes = await StateManager.GetStateAsync<List<ApiLicenseDisplay>>(AppApiLicensesKey);
 
-            CryptoRandom random = new CryptoRandom();
+                string appApiLicenseCode = codes.First().Code;
 
-            int age = random.Next(12, 115);
+                Guid consumerId = await proxy.GetNextConsumerInLineAsync(appApiLicenseCode);
 
-            SmartRequest<PlayerRegisterRequest> req = new SmartRequest<PlayerRegisterRequest>
-            {
-                CorrelationRefId = Guid.NewGuid(),
-                CreatedOn = DateTimeOffset.UtcNow,
-                Latitude = 34.072846D,
-                Longitude = -84.190285D,
-                Data = new PlayerRegisterRequest
-                {
-                    CountryCode = "US",
-                    LanguageCode = "en-US",
-                    SelfieBase64 = selfieBase64,
-                    Data = new List<KeyValuePair<string, string>>
-                    {
-                        new KeyValuePair<string, string>("age", age.ToString())
-                    }
-                }
-                ,
-                Uuid = $"{Guid.NewGuid()}"
-            };
-
-            Uri requestUri = GetFullUri("api/v3/player/registration");
-            HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
-
-            List<ApiLicenseDisplay> codes = await StateManager.GetStateAsync<List<ApiLicenseDisplay>>(AppApiLicensesKey);
-
-            string appApiLicenseCode = codes.First().Code;
-
-            //httpreq.Headers.Add("Lazlo-SimulationLicenseCode", SimulationLicenseCode);
-            //httpreq.Headers.Add("Lazlo-AuthorityLicenseCode", AuthorityLicenseCode);
-            httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
-            httpreq.Headers.Add("lazlo-correlationrefId", req.CorrelationRefId.ToString());
-
-            string json = JsonConvert.SerializeObject(req);
-
-            httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
-            HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
-
-            string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-            if (message.IsSuccessStatusCode)
-            {
-                if (age < 18)
-                {
-                    throw new CorrelationException("Allowed to register a player under 18") { CorrelationRefId = req.CorrelationRefId };
-                }
-
-                var statusResponse = JsonConvert.DeserializeObject<SmartResponse<ConsumerRegisterResponse>>(responseJson);
-
-                ActorId consumerActorId = new ActorId(Guid.NewGuid());
+                ActorId consumerActorId = new ActorId(consumerId);
 
                 IConsumerSimulationActor consumerActor = ActorProxy.Create<IConsumerSimulationActor>(consumerActorId, ConsumerServiceUri);
 
-                int modeSelection = random.Next(0, 2);
-
-                await consumerActor.InitializeAsync(
-                    appApiLicenseCode,
-                    statusResponse.Data.ConsumerLicenseCode,
-                    Id.GetGuidId(),
-                    modeSelection == 0 ? PosDeviceModes.ConsumerScans : PosDeviceModes.PosDeviceScans).ConfigureAwait(false);
-
-                await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumer);
+                await consumerActor.BeginTransaction(this.Id.GetGuidId(), PosDeviceModes.ConsumerScans);
             }
 
-            else
+            catch (Exception ex)
             {
-                // This will reset the state machine and cause the operation to be retried on the next loop
+                Debug.WriteLine(ex);
                 await _Machine.FireAsync(PosDeviceSimulationTriggerType.GoIdle);
-
-                //if (age >= 18)
-                //{
-                //    throw new CorrelationException($"Player registration failed: {message.StatusCode} {responseJson}") { CorrelationRefId = req.CorrelationRefId };
-                //}
-
-                //WriteTimedDebug("Player not registered due to age restriction");
             }
         }
+
+        //private static byte[] GetImageBytes(string imageName)
+        //{
+        //    using (Stream stream = typeof(PosDeviceSimulationActor).Assembly.GetManifestResourceStream($"Lazlo.ShoppingSimulation.PosDeviceSimulationActor.Images.{imageName}"))
+        //    {
+        //        byte[] buffer = new byte[stream.Length];
+
+        //        stream.Read(buffer, 0, buffer.Length);
+
+        //        return buffer;
+        //    }
+        //}
+
+        //private async Task CreateConsumerAsync()
+        //{
+        //    byte[] selfieBytes = GetImageBytes("christina.png");
+
+        //    string selfieBase64 = Convert.ToBase64String(selfieBytes);
+
+        //    CryptoRandom random = new CryptoRandom();
+
+        //    int age = random.Next(12, 115);
+
+        //    SmartRequest<PlayerRegisterRequest> req = new SmartRequest<PlayerRegisterRequest>
+        //    {
+        //        CorrelationRefId = Guid.NewGuid(),
+        //        CreatedOn = DateTimeOffset.UtcNow,
+        //        Latitude = 34.072846D,
+        //        Longitude = -84.190285D,
+        //        Data = new PlayerRegisterRequest
+        //        {
+        //            CountryCode = "US",
+        //            LanguageCode = "en-US",
+        //            SelfieBase64 = selfieBase64,
+        //            Data = new List<KeyValuePair<string, string>>
+        //            {
+        //                new KeyValuePair<string, string>("age", age.ToString())
+        //            }
+        //        }
+        //        ,
+        //        Uuid = $"{Guid.NewGuid()}"
+        //    };
+
+        //    Uri requestUri = GetFullUri("api/v3/player/registration");
+        //    HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
+
+        //    List<ApiLicenseDisplay> codes = await StateManager.GetStateAsync<List<ApiLicenseDisplay>>(AppApiLicensesKey);
+
+        //    string appApiLicenseCode = codes.First().Code;
+
+        //    //httpreq.Headers.Add("Lazlo-SimulationLicenseCode", SimulationLicenseCode);
+        //    //httpreq.Headers.Add("Lazlo-AuthorityLicenseCode", AuthorityLicenseCode);
+        //    httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
+        //    httpreq.Headers.Add("lazlo-correlationrefId", req.CorrelationRefId.ToString());
+
+        //    string json = JsonConvert.SerializeObject(req);
+
+        //    httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+        //    HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
+
+        //    string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+        //    if (message.IsSuccessStatusCode)
+        //    {
+        //        if (age < 18)
+        //        {
+        //            throw new CorrelationException("Allowed to register a player under 18") { CorrelationRefId = req.CorrelationRefId };
+        //        }
+
+        //        var statusResponse = JsonConvert.DeserializeObject<SmartResponse<ConsumerRegisterResponse>>(responseJson);
+
+        //        ActorId consumerActorId = new ActorId(Guid.NewGuid());
+
+        //        IConsumerSimulationActor consumerActor = ActorProxy.Create<IConsumerSimulationActor>(consumerActorId, ConsumerServiceUri);
+
+        //        int modeSelection = random.Next(0, 2);
+
+        //        await consumerActor.InitializeAsync(
+        //            appApiLicenseCode,
+        //            statusResponse.Data.ConsumerLicenseCode,
+        //            Id.GetGuidId(),
+        //            modeSelection == 0 ? PosDeviceModes.ConsumerScans : PosDeviceModes.PosDeviceScans).ConfigureAwait(false);
+
+        //        await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumer);
+        //    }
+
+        //    else
+        //    {
+        //        // This will reset the state machine and cause the operation to be retried on the next loop
+        //        await _Machine.FireAsync(PosDeviceSimulationTriggerType.GoIdle);
+
+        //        //if (age >= 18)
+        //        //{
+        //        //    throw new CorrelationException($"Player registration failed: {message.StatusCode} {responseJson}") { CorrelationRefId = req.CorrelationRefId };
+        //        //}
+
+        //        //WriteTimedDebug("Player not registered due to age restriction");
+        //    }
+        //}
 
         private void WriteTimedDebug(string message)
         {

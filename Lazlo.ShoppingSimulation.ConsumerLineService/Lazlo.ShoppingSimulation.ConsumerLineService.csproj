@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>netcoreapp2.1</TargetFramework>
+    <IsServiceFabricServiceProject>True</IsServiceFabricServiceProject>
+    <RuntimeIdentifier>win7-x64</RuntimeIdentifier>
+    <TargetLatestRuntimePatch>False</TargetLatestRuntimePatch>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="Images\christina.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Images\christina.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Lazlo.Gaming.Random" Version="1.0.0" />
+    <PackageReference Include="Lazlo.Shopping.Common" Version="1.0.11" />
+    <PackageReference Include="Microsoft.ServiceFabric.Services" Version="3.2.187" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Lazlo.ShoppingSimulation.Common\Lazlo.ShoppingSimulation.Common.csproj" />
+  </ItemGroup>
+
+</Project>
