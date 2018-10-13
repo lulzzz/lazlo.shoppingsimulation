@@ -17,6 +17,7 @@ using System.Net.Http;
 using Newtonsoft.Json;
 using Lazlo.Common.Responses;
 using Lazlo.Common.Models;
+using Microsoft.ServiceFabric.Data;
 
 namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 {
@@ -275,14 +276,25 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             try
             {
                 Guid posId = await StateManager.GetStateAsync<Guid>(PosDeviceActorIdKey).ConfigureAwait(false);
+                PosDeviceModes posDeviceMode = await StateManager.GetStateAsync<PosDeviceModes>(PosDeviceModeKey);
+                
+                string checkoutLicenseCode;
 
-                ActorId posActorId = new ActorId(posId);
+                if(posDeviceMode == PosDeviceModes.ConsumerScans)
+                {
+                    ActorId posActorId = new ActorId(posId);
 
-                IPosDeviceSimulationActor posActor = ActorProxy.Create<IPosDeviceSimulationActor>(posActorId, PosDeviceServiceUri);
+                    IPosDeviceSimulationActor posActor = ActorProxy.Create<IPosDeviceSimulationActor>(posActorId, PosDeviceServiceUri);
 
-                string checkoutLicenseCode = await posActor.ConsumerScansPos().ConfigureAwait(false);
+                    checkoutLicenseCode = await posActor.ConsumerScansPos().ConfigureAwait(false);
+                }
 
-                SimulationType simulationType = SimulationType.Player;
+                else
+                {
+                    checkoutLicenseCode = await RetrieveCheckoutLicenseCode().ConfigureAwait(false);
+                }
+
+                await StateManager.SetStateAsync(ActionLicenseCodeKey, checkoutLicenseCode);
 
                 var channelSelections = await CreateChannelSelections();
 
@@ -346,10 +358,6 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
                     var response = JsonConvert.DeserializeObject<SmartResponse<CheckoutResponse>>(responseJson);
 
-                    await StateManager.SetStateAsync(ActionLicenseCodeKey, response.Data.CheckoutLicenseCode);
-
-                    //await posActor.EnqueueCheckoutCompletePending(response.Data.CheckoutLicenseCode);
-
                     await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
                 }
 
@@ -366,6 +374,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             catch (Exception ex)
             {
                 WriteTimedDebug(ex);
+                // TODO Fire a trigger to restart checkout process
             }
         }
 
@@ -392,7 +401,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             Debug.WriteLine($"{DateTimeOffset.Now}: {ex}");
         }
 
-        public async Task<string> RetrieveCheckoutLicenseCode()
+        private async Task<string> RetrieveCheckoutLicenseCode()
         {
             try
             {
@@ -453,6 +462,13 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         {
             await StateManager.SetStateAsync(PosDeviceActorIdKey, posDeviceActorId).ConfigureAwait(false);
             await StateManager.SetStateAsync(PosDeviceModeKey, posDeviceMode).ConfigureAwait(false);
+        }
+
+        public async Task<string> PosScansConsumer()
+        {
+            ConditionalValue<string> actionLicenseCheck = await StateManager.TryGetStateAsync<string>(ActionLicenseCodeKey);
+
+            return actionLicenseCheck.HasValue ? actionLicenseCheck.Value : null;
         }
     }
 }

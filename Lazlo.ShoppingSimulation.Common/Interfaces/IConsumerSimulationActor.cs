@@ -15,7 +15,7 @@ namespace Lazlo.ShoppingSimulation.Common.Interfaces
     {
         Task InitializeAsync(string appApiLicenseKey, string consumerLicenseCode);
 
-        Task<string> RetrieveCheckoutLicenseCode();
+        Task<string> PosScansConsumer();
 
         Task BeginTransaction(Guid posDeviceActorId, PosDeviceModes posDeviceMode);
     }

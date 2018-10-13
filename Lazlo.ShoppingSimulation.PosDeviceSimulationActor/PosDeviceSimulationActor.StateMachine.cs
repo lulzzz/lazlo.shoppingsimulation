@@ -39,10 +39,19 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             _Machine.Configure(PosDeviceSimulationStateType.NextInLine)
                 .OnEntry(async () => await GetNextInLine())
                 .Permit(PosDeviceSimulationTriggerType.GoIdle, PosDeviceSimulationStateType.Idle)         // An error occurred creating the consumer, go back to idle, try again next loop
-                .Permit(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout, PosDeviceSimulationStateType.WaitingForConsumerToCheckout);
+                .Permit(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout, PosDeviceSimulationStateType.WaitingForConsumerToCheckout)
+                .Permit(PosDeviceSimulationTriggerType.WaitForConsumerToPresentQr, PosDeviceSimulationStateType.WaitingForConsumerToPresentQr);
 
             _Machine.Configure(PosDeviceSimulationStateType.WaitingForConsumerToCheckout)
                 .Permit(PosDeviceSimulationTriggerType.CallCheckoutCompletePending, PosDeviceSimulationStateType.CallingCheckoutCompletePending);
+
+            _Machine.Configure(PosDeviceSimulationStateType.WaitingForConsumerToPresentQr)
+                .Permit(PosDeviceSimulationTriggerType.ScanConsumerQr, PosDeviceSimulationStateType.ScanningConsumerQr);
+
+            _Machine.Configure(PosDeviceSimulationStateType.ScanningConsumerQr)
+                .OnEntry(async () => await ScanConsumerQr())
+                .Permit(PosDeviceSimulationTriggerType.WaitForConsumerToPresentQr, PosDeviceSimulationStateType.WaitingForConsumerToPresentQr) // Consumer hasn't started session, loop back
+                .Permit(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout, PosDeviceSimulationStateType.WaitingForConsumerToCheckout);
 
             _Machine.Configure(PosDeviceSimulationStateType.CallingCheckoutCompletePending)
                 .OnEntryAsync(async () => await CheckoutCompletePendingAsync())
@@ -119,7 +128,9 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         GoIdle = 2,
         GetNextInLine = 4,
         CallCheckoutCompletePending = 64,
-        WaitForConsumerToCheckout = 128
+        WaitForConsumerToCheckout = 128,
+        WaitForConsumerToPresentQr = 256,
+        ScanConsumerQr = 512,
         //CallCheckoutCompletePending = 8,
         //QueueCheckoutPending = 16
         //Registering = 16,
@@ -140,6 +151,8 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         NextInLine = 8,
         CallingCheckoutCompletePending = 16,
         WaitingForConsumerToCheckout = 32,
+        WaitingForConsumerToPresentQr = 64,
+        ScanningConsumerQr = 128,
         //WaitingForConsumer = 16,
         //CheckoutPendingQueued = 32,
         //ProcessingCheckoutPending = 64,

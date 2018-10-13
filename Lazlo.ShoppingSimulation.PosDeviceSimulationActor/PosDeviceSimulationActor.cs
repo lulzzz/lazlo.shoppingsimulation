@@ -41,6 +41,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         const bool _UseLocalHost = false;
         string _UriBase = "devshopapi.services.32point6.com";
 
+        const string CurrentConsumerIdKey = "CurrentConsumerIdKey";
         const string InitializedKey = "InitializedKey";
         const string CheckoutLicenseCodeKey = "CheckoutLicenseCodeKey";
         const string PosDeviceApiLicenseCodeKey = "PosDeviceApiLicenseCodeKey";
@@ -226,6 +227,10 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
                 case PosDeviceSimulationStateType.WaitingForConsumerToCheckout:
                     await _Machine.FireAsync(PosDeviceSimulationTriggerType.CallCheckoutCompletePending);
                     break;
+
+                case PosDeviceSimulationStateType.WaitingForConsumerToPresentQr:
+                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.ScanConsumerQr);
+                    break;
             }
         }
 
@@ -284,84 +289,6 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             await _Machine.FireAsync(PosDeviceSimulationTriggerType.GoIdle);
         }
 
-        //private async Task OnInitialized(string appApiLicenseCode)
-        //{
-        //    this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.Idle;
-
-        //    await SetStateAsync();
-
-        //    ActorEventSource.Current.ActorMessage(this, $"Actor [{this.GetActorReference().ActorId.GetGuidId()}] initialized.");
-        //}
-
-        #region Register
-
-        //private async Task OnRegistering()
-        //{
-        //    if (!this.stateFlags.HasFlag(PosDeviceSimulationStateType.Registering))
-        //    {
-        //        this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.Registering;
-
-        //        await SetStateAsync();
-        //    }
-        //}
-
-        //private async Task OnRegistered()
-        //{
-        //    if (!this.stateFlags.HasFlag(PosDeviceSimulationStateType.Registered))
-        //    {
-        //        this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.Registered;
-
-        //        await SetStateAsync();
-        //    }
-        //}
-
-        #endregion Cancel
-
-        //#region TxStart
-
-        //private Task<bool> CanTxStart(CancellationToken cancellationToken)
-        //{
-        //    Debug.Assert(state == _Machine.State);
-        //    return Task.FromResult(_Machine.CanFire(PosDeviceSimulationTriggerType.TxStart));
-        //}
-
-        //private async Task OnTxStart(string appApiLicenseCode)
-        //{
-        //    if (!this.stateFlags.HasFlag(PosDeviceSimulationStateType.TxStarted))
-        //    {
-        //        this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.TxStarted;
-
-        //        Debug.Assert(state == _Machine.State);
-                
-        //        // instantiate ConsumerActor and play a game
-
-
-
-
-
-
-        //        await AddOrUpdateEntityStateAsync();
-
-        //        //await this.machine.Activate(PosDeviceSimulationStateType.TxStarted;
-        //    }
-        //}
-
-        //private async Task OnTxStarted()
-        //{
-        //    if (!this.stateFlags.HasFlag(PosDeviceSimulationStateType.Registered))
-        //    {
-        //        this.stateFlags = this.stateFlags | PosDeviceSimulationStateType.Registered;
-
-        //        Debug.Assert(state == _Machine.State);
-
-        //        this._PosDevice.CreatedOn = DateTimeOffset.UtcNow;
-
-        //        await AddOrUpdateEntityStateAsync();
-        //    }
-        //}
-
-        //#endregion Cancel
-
         private Uri GetFullUri(string fragment)
         {
             if (_UseLocalHost)
@@ -381,10 +308,16 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             {
                 WriteTimedDebug("GetNextInLine");
 
-                // Assuming now consumer scans pos
-                await CreateCheckoutSessionAsync();
-
                 Random random = new Random();
+
+                PosDeviceModes posDeviceMode = random.Next(0, 2) == 0 ? PosDeviceModes.ConsumerScans : PosDeviceModes.PosDeviceScans;
+
+                posDeviceMode = PosDeviceModes.PosDeviceScans;
+
+                if (posDeviceMode == PosDeviceModes.ConsumerScans)
+                {
+                    await CreateCheckoutSessionAsync();
+                }
 
                 int partitionIndex = random.Next(0, 4);
 
@@ -398,13 +331,23 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
                 Guid consumerId = await proxy.GetNextConsumerInLineAsync(appApiLicenseCode);
 
+                await StateManager.SetStateAsync(CurrentConsumerIdKey, consumerId);
+
                 ActorId consumerActorId = new ActorId(consumerId);
 
                 IConsumerSimulationActor consumerActor = ActorProxy.Create<IConsumerSimulationActor>(consumerActorId, ConsumerServiceUri);
 
-                await consumerActor.BeginTransaction(this.Id.GetGuidId(), PosDeviceModes.ConsumerScans);
+                await consumerActor.BeginTransaction(this.Id.GetGuidId(), posDeviceMode);
 
-                await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout);
+                if(posDeviceMode == PosDeviceModes.ConsumerScans)
+                {
+                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout);
+                }
+
+                else
+                {
+                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToPresentQr);
+                }
             }
 
             catch (Exception ex)
@@ -414,105 +357,37 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             }
         }
 
-        //private static byte[] GetImageBytes(string imageName)
-        //{
-        //    using (Stream stream = typeof(PosDeviceSimulationActor).Assembly.GetManifestResourceStream($"Lazlo.ShoppingSimulation.PosDeviceSimulationActor.Images.{imageName}"))
-        //    {
-        //        byte[] buffer = new byte[stream.Length];
+        private async Task ScanConsumerQr()
+        {
+            try
+            {
+                Guid consumerId = await StateManager.GetStateAsync<Guid>(CurrentConsumerIdKey);
 
-        //        stream.Read(buffer, 0, buffer.Length);
+                ActorId consumerActorId = new ActorId(consumerId);
 
-        //        return buffer;
-        //    }
-        //}
+                IConsumerSimulationActor consumerActor = ActorProxy.Create<IConsumerSimulationActor>(consumerActorId, ConsumerServiceUri);
 
-        //private async Task CreateConsumerAsync()
-        //{
-        //    byte[] selfieBytes = GetImageBytes("christina.png");
+                string checkoutSessionLicenseCode = await consumerActor.PosScansConsumer().ConfigureAwait(false);
 
-        //    string selfieBase64 = Convert.ToBase64String(selfieBytes);
+                if(checkoutSessionLicenseCode == null)
+                {
+                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToPresentQr);
+                }
 
-        //    CryptoRandom random = new CryptoRandom();
+                else
+                {
+                    await StateManager.SetStateAsync(CheckoutLicenseCodeKey, checkoutSessionLicenseCode);
 
-        //    int age = random.Next(12, 115);
+                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout);
+                }
+            }
 
-        //    SmartRequest<PlayerRegisterRequest> req = new SmartRequest<PlayerRegisterRequest>
-        //    {
-        //        CorrelationRefId = Guid.NewGuid(),
-        //        CreatedOn = DateTimeOffset.UtcNow,
-        //        Latitude = 34.072846D,
-        //        Longitude = -84.190285D,
-        //        Data = new PlayerRegisterRequest
-        //        {
-        //            CountryCode = "US",
-        //            LanguageCode = "en-US",
-        //            SelfieBase64 = selfieBase64,
-        //            Data = new List<KeyValuePair<string, string>>
-        //            {
-        //                new KeyValuePair<string, string>("age", age.ToString())
-        //            }
-        //        }
-        //        ,
-        //        Uuid = $"{Guid.NewGuid()}"
-        //    };
-
-        //    Uri requestUri = GetFullUri("api/v3/player/registration");
-        //    HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
-
-        //    List<ApiLicenseDisplay> codes = await StateManager.GetStateAsync<List<ApiLicenseDisplay>>(AppApiLicensesKey);
-
-        //    string appApiLicenseCode = codes.First().Code;
-
-        //    //httpreq.Headers.Add("Lazlo-SimulationLicenseCode", SimulationLicenseCode);
-        //    //httpreq.Headers.Add("Lazlo-AuthorityLicenseCode", AuthorityLicenseCode);
-        //    httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
-        //    httpreq.Headers.Add("lazlo-correlationrefId", req.CorrelationRefId.ToString());
-
-        //    string json = JsonConvert.SerializeObject(req);
-
-        //    httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
-        //    HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
-
-        //    string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-        //    if (message.IsSuccessStatusCode)
-        //    {
-        //        if (age < 18)
-        //        {
-        //            throw new CorrelationException("Allowed to register a player under 18") { CorrelationRefId = req.CorrelationRefId };
-        //        }
-
-        //        var statusResponse = JsonConvert.DeserializeObject<SmartResponse<ConsumerRegisterResponse>>(responseJson);
-
-        //        ActorId consumerActorId = new ActorId(Guid.NewGuid());
-
-        //        IConsumerSimulationActor consumerActor = ActorProxy.Create<IConsumerSimulationActor>(consumerActorId, ConsumerServiceUri);
-
-        //        int modeSelection = random.Next(0, 2);
-
-        //        await consumerActor.InitializeAsync(
-        //            appApiLicenseCode,
-        //            statusResponse.Data.ConsumerLicenseCode,
-        //            Id.GetGuidId(),
-        //            modeSelection == 0 ? PosDeviceModes.ConsumerScans : PosDeviceModes.PosDeviceScans).ConfigureAwait(false);
-
-        //        await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumer);
-        //    }
-
-        //    else
-        //    {
-        //        // This will reset the state machine and cause the operation to be retried on the next loop
-        //        await _Machine.FireAsync(PosDeviceSimulationTriggerType.GoIdle);
-
-        //        //if (age >= 18)
-        //        //{
-        //        //    throw new CorrelationException($"Player registration failed: {message.StatusCode} {responseJson}") { CorrelationRefId = req.CorrelationRefId };
-        //        //}
-
-        //        //WriteTimedDebug("Player not registered due to age restriction");
-        //    }
-        //}
+            catch (Exception ex)
+            {
+                WriteTimedDebug(ex);
+                await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToPresentQr);
+            }
+        }
 
         private void WriteTimedDebug(string message)
         {
@@ -523,25 +398,6 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         {
             Debug.WriteLine($"{DateTimeOffset.Now}: {ex}");
         }
-
-        //public async Task EnqueueCheckoutCompletePending(string checkoutSessionLicenseCode)
-        //{
-        //    try
-        //    {
-        //        await _Machine.FireAsync(_CheckoutPendingTrigger, checkoutSessionLicenseCode);
-        //    }
-
-        //    catch (Exception ex)
-        //    {
-        //        WriteTimedDebug(ex);
-        //        throw;
-        //    }
-        //}
-
-        //private async Task WaitingForConsumerToQueueCheckoutPending(string checkoutSessionLicenseCode)
-        //{
-        //    await StateManager.SetStateAsync(CheckoutSessionLicenseCodeKey, checkoutSessionLicenseCode);
-        //}
 
         private async Task CheckoutCompletePendingAsync()
         {
