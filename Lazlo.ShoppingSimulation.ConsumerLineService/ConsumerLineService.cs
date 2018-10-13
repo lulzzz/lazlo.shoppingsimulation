@@ -28,7 +28,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerLineService
     /// </summary>
     internal sealed class ConsumerLineService : StatefulService, ILineService
     {
-        const bool _UseLocalHost = true;
+        const bool _UseLocalHost = false;
         string _UriBase = "devshopapi.services.32point6.com";
 
         const string ConsumerQueueName = "ConsumerQueueName";

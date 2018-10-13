@@ -36,7 +36,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                 .Permit(ConsumerSimulationWorkflowActions.InitializeActor, ConsumerSimulationStateType.ActorInitializing)
                 .OnExitAsync(() =>
                 {
-                    Debug.WriteLine("Exiting Actor Created");
+                    WriteTimedDebug("Exiting Actor Created");
                     return Task.CompletedTask;
                 });
 
@@ -57,12 +57,19 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             
             _StateMachine.Configure(ConsumerSimulationStateType.CheckingOut)
                 .OnEntryAsync(async () => await CreateTicketCheckoutRequest())
-				.Permit(ConsumerSimulationWorkflowActions.PollTickets, ConsumerSimulationStateType.PollingTickets);
+				.Permit(ConsumerSimulationWorkflowActions.WaitForTicketsToRender, ConsumerSimulationStateType.WaitingForTicketsToRender);
+
+            _StateMachine.Configure(ConsumerSimulationStateType.WaitingForTicketsToRender)
+                .Permit(ConsumerSimulationWorkflowActions.CheckTicketStatus, ConsumerSimulationStateType.CheckingTicketStatus);
+
+            _StateMachine.Configure(ConsumerSimulationStateType.CheckingTicketStatus)
+                .OnEntryAsync(async () => await RetrieveCheckoutStatus())
+                .Permit(ConsumerSimulationWorkflowActions.WaitForTicketsToRender, ConsumerSimulationStateType.WaitingForTicketsToRender);
         }
 
         private Task LogTransitionAsync(StateMachine<ConsumerSimulationStateType, ConsumerSimulationWorkflowActions>.Transition arg)
         {
-            Debug.WriteLine($"Transition from {arg.Source} to {arg.Destination}");
+            WriteTimedDebug($"Consumer transition from {arg.Source} to {arg.Destination}");
 
             return Task.CompletedTask;
 
@@ -86,7 +93,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
             catch (Exception ex)
             {
-                Debug.WriteLine("Unable to save transition history");
+                WriteTimedDebug("Unable to save transition history");
             }
         }
     }
@@ -99,7 +106,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 		GetInLine,
         AssignPos,
 		Checkout,
-		PollTickets		
+		WaitForTicketsToRender,
+        CheckTicketStatus
     }
 
     [Flags]
@@ -112,7 +120,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 		WaitingInLine = 8,
         PosAssigned = 16,
 		CheckingOut = 32,
-		PollingTickets = 64,
+        WaitingForTicketsToRender = 64,
+		CheckingTicketStatus = 128,
         DeadManWalking = 8196
     }
 }

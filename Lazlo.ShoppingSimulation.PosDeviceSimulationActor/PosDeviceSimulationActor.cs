@@ -38,10 +38,11 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         static readonly Uri ConsumerServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/ConsumerSimulationActorService");
         static readonly Uri LineServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/Lazlo.ShoppingSimulation.ConsumerLineService");
 
-        const bool _UseLocalHost = true;
+        const bool _UseLocalHost = false;
         string _UriBase = "devshopapi.services.32point6.com";
 
         const string InitializedKey = "InitializedKey";
+        const string CheckoutLicenseCodeKey = "CheckoutLicenseCodeKey";
         const string PosDeviceApiLicenseCodeKey = "PosDeviceApiLicenseCodeKey";
         const string PosDeviceModeKey = "PosDeviceModeKey";
         const string AppApiLicensesKey = "AppApiLicensesKey";
@@ -101,7 +102,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
             catch (Exception ex)
             {
-                Debug.WriteLine(ex);
+                WriteTimedDebug(ex);
                 throw;
             }
         }
@@ -130,36 +131,8 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
             catch (Exception ex)
             {
-                Debug.WriteLine(ex);
+                WriteTimedDebug(ex);
                 throw;
-            }
-        }
-               
-        private async Task LogTransitionAsync(StateMachine<PosDeviceSimulationStateType, PosDeviceSimulationTriggerType>.Transition arg)
-        {
-            Debug.WriteLine($"Transition from {arg.Source} to {arg.Destination}");
-
-            try
-            {
-                //var conditionalValue = await this.StateManager.TryGetStateAsync<StateTransitionHistory<PosDeviceSimulationStateType>>("transitionHistory");
-
-                //StateTransitionHistory<PosDeviceSimulationStateType> history;
-
-                //if (conditionalValue.HasValue)
-                //{
-                //    history = StateTransitionHistory<PosDeviceSimulationStateType>.AddTransition(arg.Destination, conditionalValue.Value);
-                //}
-                //else
-                //{
-                //    history = new StateTransitionHistory<PosDeviceSimulationStateType>(arg.Destination);
-                //}
-
-                //await this.StateManager.SetStateAsync<StateTransitionHistory<PosDeviceSimulationStateType>>("transitionHistory", history);
-            }
-
-            catch (Exception ex)
-            {
-                Debug.WriteLine("Unable to save transition history");
             }
         }
 
@@ -242,7 +215,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
         public async Task ProcessWorkflow()
         {
-            Debug.WriteLine("PosDeviceSimulation ProcessWorkflowEntered");
+            WriteTimedDebug($"PosDeviceSimulation ProcessWorkflowEntered: {_Machine.State}");
 
             switch (_Machine.State)
             {
@@ -250,8 +223,8 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
                     await _Machine.FireAsync(PosDeviceSimulationTriggerType.GetNextInLine);
                     break;
 
-                case PosDeviceSimulationStateType.CheckoutPendingQueued:
-                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.ProcessCheckoutPending);
+                case PosDeviceSimulationStateType.WaitingForConsumerToCheckout:
+                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.CallCheckoutCompletePending);
                     break;
             }
         }
@@ -276,7 +249,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
             catch (Exception ex)
             {
-                Debug.WriteLine(ex);
+                WriteTimedDebug(ex);
             }
         }
 
@@ -406,6 +379,11 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         {
             try
             {
+                WriteTimedDebug("GetNextInLine");
+
+                // Assuming now consumer scans pos
+                await CreateCheckoutSessionAsync();
+
                 Random random = new Random();
 
                 int partitionIndex = random.Next(0, 4);
@@ -425,11 +403,13 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
                 IConsumerSimulationActor consumerActor = ActorProxy.Create<IConsumerSimulationActor>(consumerActorId, ConsumerServiceUri);
 
                 await consumerActor.BeginTransaction(this.Id.GetGuidId(), PosDeviceModes.ConsumerScans);
+
+                await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout);
             }
 
             catch (Exception ex)
             {
-                Debug.WriteLine(ex);
+                WriteTimedDebug(ex);
                 await _Machine.FireAsync(PosDeviceSimulationTriggerType.GoIdle);
             }
         }
@@ -539,81 +519,53 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             Debug.WriteLine($"{DateTimeOffset.Now}: {message}");
         }
 
-        public async Task EnqueueCheckoutCompletePending(string checkoutSessionLicenseCode)
+        private void WriteTimedDebug(Exception ex)
         {
-            try
-            {
-                await _Machine.FireAsync(_CheckoutPendingTrigger, checkoutSessionLicenseCode);
-            }
-
-            catch (Exception ex)
-            {
-                Debug.WriteLine(ex);
-                throw;
-            }
+            Debug.WriteLine($"{DateTimeOffset.Now}: {ex}");
         }
 
-        private async Task WaitingForConsumerToQueueCheckoutPending(string checkoutSessionLicenseCode)
-        {
-            await StateManager.SetStateAsync(CheckoutSessionLicenseCodeKey, checkoutSessionLicenseCode);
-        }
+        //public async Task EnqueueCheckoutCompletePending(string checkoutSessionLicenseCode)
+        //{
+        //    try
+        //    {
+        //        await _Machine.FireAsync(_CheckoutPendingTrigger, checkoutSessionLicenseCode);
+        //    }
+
+        //    catch (Exception ex)
+        //    {
+        //        WriteTimedDebug(ex);
+        //        throw;
+        //    }
+        //}
+
+        //private async Task WaitingForConsumerToQueueCheckoutPending(string checkoutSessionLicenseCode)
+        //{
+        //    await StateManager.SetStateAsync(CheckoutSessionLicenseCodeKey, checkoutSessionLicenseCode);
+        //}
 
         private async Task CheckoutCompletePendingAsync()
         {
-            string checkoutSessionLicenseCode = await StateManager.GetStateAsync<string>(CheckoutSessionLicenseCodeKey);
-
-            Uri requestUri = GetFullUri("api/v3/shopping/checkout/complete/pending");
-
-            SmartRequest<CheckoutCompletePendingRequest> req = new SmartRequest<CheckoutCompletePendingRequest>
-            {
-                CreatedOn = DateTimeOffset.UtcNow,
-                Data = new CheckoutCompletePendingRequest
-                {
-                    CheckoutSessionLicenseCode = checkoutSessionLicenseCode,
-                },
-                Latitude = 34.072846D,
-                Longitude = -84.190285D,
-                Uuid = "A8C1048F-5A2B-4953-9C71-36581827AFE1"   // Is this even used anymore?
-            };
-
-            string json = JsonConvert.SerializeObject(req);
-
-            //List<ApiLicenseDisplay> codes = await StateManager.GetStateAsync<List<ApiLicenseDisplay>>(AppApiLicensesKey);
-
-            //string appApiLicenseCode = codes.First().Code;
-
-            HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
-
-            string posDeviceApiLicenseCode = await StateManager.GetStateAsync<string>(PosDeviceApiLicenseCodeKey).ConfigureAwait(false);
-
-            httpreq.Headers.Add("lazlo-apilicensecode", posDeviceApiLicenseCode);
-
-            httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
-            DateTimeOffset opStart = DateTimeOffset.UtcNow;
-
-            HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
-
-            string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-            var response = JsonConvert.DeserializeObject<SmartResponse<CheckoutPendingResponse>>(responseJson);
-
-            if (message.IsSuccessStatusCode)
-            {
-                Debug.WriteLine("Unlikely");
-            }
-
-            else
-            {
-                Debug.WriteLine("That's what I thought");
-            }
-        }
-
-        public async Task<string> RetrieveCheckoutLicenseCode()
-        {
             try
             {
-                Uri requestUri = GetFullUri("api/v1/shopping/pos/checkout/create");
+                WriteTimedDebug("CheckoutCompletePendingAsync");
+
+                string checkoutSessionLicenseCode = await StateManager.GetStateAsync<string>(CheckoutLicenseCodeKey);
+
+                Uri requestUri = GetFullUri("api/v3/shopping/checkout/complete/pending");
+
+                SmartRequest<CheckoutCompletePendingRequest> req = new SmartRequest<CheckoutCompletePendingRequest>
+                {
+                    CreatedOn = DateTimeOffset.UtcNow,
+                    Data = new CheckoutCompletePendingRequest
+                    {
+                        CheckoutSessionLicenseCode = checkoutSessionLicenseCode,
+                    },
+                    Latitude = 34.072846D,
+                    Longitude = -84.190285D,
+                    Uuid = "A8C1048F-5A2B-4953-9C71-36581827AFE1"   // Is this even used anymore?
+                };
+
+                string json = JsonConvert.SerializeObject(req);
 
                 HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
 
@@ -621,34 +573,77 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
                 httpreq.Headers.Add("lazlo-apilicensecode", posDeviceApiLicenseCode);
 
-                SmartRequest<object> req = new SmartRequest<object> { };
-
-                string json = JsonConvert.SerializeObject(req);
-
                 httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+                DateTimeOffset opStart = DateTimeOffset.UtcNow;
 
                 HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
 
                 string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-                SmartResponse<CheckoutResponseBase> response = JsonConvert.DeserializeObject<SmartResponse<CheckoutResponseBase>>(responseJson);
+                var response = JsonConvert.DeserializeObject<SmartResponse<CheckoutPendingResponse>>(responseJson);
 
                 if (message.IsSuccessStatusCode)
                 {
-                    return response.Data.CheckoutLicenseCode;
+                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout);
                 }
 
                 else
                 {
-                    throw new Exception(response.Error.Message);
+                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout);
                 }
             }
 
             catch (Exception ex)
             {
-                Debug.WriteLine(ex);
-                throw;
+                WriteTimedDebug(ex);
+                await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout);
             }
+        }
+
+        public async Task CreateCheckoutSessionAsync()
+        {
+            WriteTimedDebug("CreateCheckoutSessionAsync");
+
+            Uri requestUri = GetFullUri("api/v1/shopping/pos/checkout/create");
+
+            HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
+
+            string posDeviceApiLicenseCode = await StateManager.GetStateAsync<string>(PosDeviceApiLicenseCodeKey).ConfigureAwait(false);
+
+            httpreq.Headers.Add("lazlo-apilicensecode", posDeviceApiLicenseCode);
+
+            SmartRequest<object> req = new SmartRequest<object> { };
+
+            string json = JsonConvert.SerializeObject(req);
+
+            httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+            HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
+
+            string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+            SmartResponse<CheckoutResponseBase> response = JsonConvert.DeserializeObject<SmartResponse<CheckoutResponseBase>>(responseJson);
+
+            if (message.IsSuccessStatusCode)
+            {
+                await StateManager.SetStateAsync(CheckoutLicenseCodeKey, response.Data.CheckoutLicenseCode);
+            }
+
+            else
+            {
+                throw new Exception(response.Error.Message);
+            }
+        }
+
+        // In a sense this is outside of the workflow in the sense that the Pos doesn't know it has been scanned
+        public async Task<string> ConsumerScansPos()
+        {
+            WriteTimedDebug("ConsumerScansPos");
+
+            string checkoutLicenseCode = await StateManager.GetStateAsync<string>(CheckoutLicenseCodeKey).ConfigureAwait(false);
+
+            return checkoutLicenseCode;
         }
     }
 }

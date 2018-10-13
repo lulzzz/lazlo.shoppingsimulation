@@ -42,7 +42,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         const string KillMeReminderKey = "KillMeReminderKey";
         const string WorkflowReminderKey = "WorkflowReminderKey";
 
-        const bool _UseLocalHost = true;
+        const bool _UseLocalHost = false;
         string _UriBase = "devshopapi.services.32point6.com";
 
         protected HttpClient _HttpClient = new HttpClient();
@@ -76,7 +76,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
             catch (Exception ex)
             {
-                Debug.WriteLine(ex);
+                WriteTimedDebug(ex);
                 throw;
             }
         }
@@ -98,14 +98,14 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
             catch (Exception ex)
             {
-                Debug.WriteLine(ex);
+                WriteTimedDebug(ex);
                 throw;
             }
         }
 
         private async Task CreateToInitialized(string appApiLicenseKey, string consumerLicenseCode)
         {
-            Debug.WriteLine("CreateToInitialized Entered");
+            WriteTimedDebug("CreateToInitialized Entered");
 
             await RegisterReminderAsync(WorkflowReminderKey, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(5)).ConfigureAwait(false);
 
@@ -138,7 +138,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
         public async Task ProcessWorkflow()
         {
-            Debug.WriteLine("ConsumerSimulation ProcessWorkflowEntered");
+            WriteTimedDebug($"ConsumerSimulation ProcessWorkflowEntered {_StateMachine.State}");
 
             switch (_StateMachine.State)
             {
@@ -151,8 +151,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                     await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.Checkout);
                     break;
 
-                case ConsumerSimulationStateType.PollingTickets:
-                    await RetrieveCheckoutStatus();
+                case ConsumerSimulationStateType.WaitingForTicketsToRender:
+                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.CheckTicketStatus);                    
                     break;
             }
         }
@@ -177,12 +177,13 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
             if (message.IsSuccessStatusCode)
             {
-                var statusResponse = JsonConvert.DeserializeObject<SmartResponse<CheckoutStatusResponse>>(responseJson);
+                await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
+                //var statusResponse = JsonConvert.DeserializeObject<SmartResponse<CheckoutStatusResponse>>(responseJson);
             }
 
             else
             {
-
+                await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
             }
         }
 
@@ -206,7 +207,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
             catch (Exception ex)
             {
-                Debug.WriteLine(ex);
+                WriteTimedDebug(ex);
             }
         }
 
@@ -273,16 +274,13 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         {
             try
             {
-                // TODO REMOVE THIS TEMPORARY CALL
-                await RetrieveCheckoutLicenseCode();
-
                 Guid posId = await StateManager.GetStateAsync<Guid>(PosDeviceActorIdKey).ConfigureAwait(false);
 
                 ActorId posActorId = new ActorId(posId);
 
                 IPosDeviceSimulationActor posActor = ActorProxy.Create<IPosDeviceSimulationActor>(posActorId, PosDeviceServiceUri);
 
-                string checkoutLicenseCode = await posActor.RetrieveCheckoutLicenseCode().ConfigureAwait(false);
+                string checkoutLicenseCode = await posActor.ConsumerScansPos().ConfigureAwait(false);
 
                 SimulationType simulationType = SimulationType.Player;
 
@@ -318,7 +316,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                     }
                 };
 
-                Uri requestUri = GetFullUri("api/v1/shopping/checkout/cart/consumer");
+                Uri requestUri = GetFullUri("api/v1/shopping/consumer/checkout");
 
                 HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
 
@@ -344,13 +342,15 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
                 if (message.IsSuccessStatusCode)
                 {
+                    WriteTimedDebug($"Ticket Checkout Successful");
+
                     var response = JsonConvert.DeserializeObject<SmartResponse<CheckoutResponse>>(responseJson);
 
                     await StateManager.SetStateAsync(ActionLicenseCodeKey, response.Data.CheckoutLicenseCode);
 
-                    await posActor.EnqueueCheckoutCompletePending(response.Data.CheckoutLicenseCode);
+                    //await posActor.EnqueueCheckoutCompletePending(response.Data.CheckoutLicenseCode);
 
-                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.PollTickets);
+                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
                 }
 
                 else
@@ -365,10 +365,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             }
             catch (Exception ex)
             {
-                Debug.WriteLine(ex);
+                WriteTimedDebug(ex);
             }
-
-            Debugger.Break();
         }
 
         private Uri GetFullUri(string fragment)
@@ -389,11 +387,16 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             Debug.WriteLine($"{DateTimeOffset.Now}: {message}");
         }
 
+        private void WriteTimedDebug(Exception ex)
+        {
+            Debug.WriteLine($"{DateTimeOffset.Now}: {ex}");
+        }
+
         public async Task<string> RetrieveCheckoutLicenseCode()
         {
             try
             {
-                Uri requestUri = GetFullUri("api/v1/shopping/consumer/checkout/create");
+                Uri requestUri = GetFullUri("api/v1/shopping/consumer/checkout/session");
 
                 HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
 
@@ -428,7 +431,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
             catch (Exception ex)
             {
-                Debug.WriteLine(ex);
+                WriteTimedDebug(ex);
                 throw;
             }
         }

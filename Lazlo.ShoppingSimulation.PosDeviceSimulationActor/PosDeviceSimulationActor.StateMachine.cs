@@ -3,6 +3,7 @@ using Stateless;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 {
@@ -11,14 +12,12 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         private StateMachine<PosDeviceSimulationStateType, PosDeviceSimulationTriggerType> _Machine;
 
         private StateMachine<PosDeviceSimulationStateType, PosDeviceSimulationTriggerType>.TriggerWithParameters<string, List<ApiLicenseDisplay>, PosDeviceModes> _InitializeTrigger;
-        private StateMachine<PosDeviceSimulationStateType, PosDeviceSimulationTriggerType>.TriggerWithParameters<string> _CheckoutPendingTrigger;
 
         private void ConfigureMachine()
         {
             _Machine = new StateMachine<PosDeviceSimulationStateType, PosDeviceSimulationTriggerType>(() => this.state, s => this.state = s);
 
             _InitializeTrigger = _Machine.SetTriggerParameters<string, List<ApiLicenseDisplay>, PosDeviceModes>(PosDeviceSimulationTriggerType.InitializeActor);
-            _CheckoutPendingTrigger = _Machine.SetTriggerParameters<string>(PosDeviceSimulationTriggerType.QueueCheckoutPending);
 
             _Machine.OnTransitionedAsync(LogTransitionAsync);
 
@@ -39,18 +38,29 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
             _Machine.Configure(PosDeviceSimulationStateType.NextInLine)
                 .OnEntry(async () => await GetNextInLine())
-                .Permit(PosDeviceSimulationTriggerType.WaitForConsumer, PosDeviceSimulationStateType.WaitingForConsumer)
-                .Permit(PosDeviceSimulationTriggerType.GoIdle, PosDeviceSimulationStateType.Idle);          // An error occurred creating the consumer, go back to idle, try again next loop
+                .Permit(PosDeviceSimulationTriggerType.GoIdle, PosDeviceSimulationStateType.Idle)         // An error occurred creating the consumer, go back to idle, try again next loop
+                .Permit(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout, PosDeviceSimulationStateType.WaitingForConsumerToCheckout);
 
-            _Machine.Configure(PosDeviceSimulationStateType.WaitingForConsumer)
-                .Permit(PosDeviceSimulationTriggerType.QueueCheckoutPending, PosDeviceSimulationStateType.CheckoutPendingQueued);
+            _Machine.Configure(PosDeviceSimulationStateType.WaitingForConsumerToCheckout)
+                .Permit(PosDeviceSimulationTriggerType.CallCheckoutCompletePending, PosDeviceSimulationStateType.CallingCheckoutCompletePending);
 
-            _Machine.Configure(PosDeviceSimulationStateType.CheckoutPendingQueued)
-                .OnEntryFromAsync(_CheckoutPendingTrigger, async (a) => await WaitingForConsumerToQueueCheckoutPending(a))
-                .Permit(PosDeviceSimulationTriggerType.ProcessCheckoutPending, PosDeviceSimulationStateType.ProcessingCheckoutPending);
+            _Machine.Configure(PosDeviceSimulationStateType.CallingCheckoutCompletePending)
+                .OnEntryAsync(async () => await CheckoutCompletePendingAsync())
+                .Permit(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout, PosDeviceSimulationStateType.WaitingForConsumerToCheckout);
 
-            _Machine.Configure(PosDeviceSimulationStateType.ProcessingCheckoutPending)
-                .OnEntryAsync(async () => await CheckoutCompletePendingAsync());
+
+            //    .Permit(PosDeviceSimulationTriggerType.WaitForConsumer, PosDeviceSimulationStateType.WaitingForConsumer)
+
+
+            //_Machine.Configure(PosDeviceSimulationStateType.WaitingForConsumer)
+            //    .Permit(PosDeviceSimulationTriggerType.QueueCheckoutPending, PosDeviceSimulationStateType.CheckoutPendingQueued);
+
+            //_Machine.Configure(PosDeviceSimulationStateType.CheckoutPendingQueued)
+            //    .OnEntryFromAsync(_CheckoutPendingTrigger, async (a) => await WaitingForConsumerToQueueCheckoutPending(a))
+            //    .Permit(PosDeviceSimulationTriggerType.ProcessCheckoutPending, PosDeviceSimulationStateType.ProcessingCheckoutPending);
+
+            //_Machine.Configure(PosDeviceSimulationStateType.ProcessingCheckoutPending)
+            //    .OnEntryAsync(async () => await CheckoutCompletePendingAsync());
 
 
             //_Machine.Configure(PosDeviceSimulationStateType.Registering)
@@ -71,6 +81,34 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             //    .OnEntryFromAsync(txStartTrigger, (appApiLicenseCode) => OnTxStart(appApiLicenseCode))
             //    ;
         }
+
+        private async Task LogTransitionAsync(StateMachine<PosDeviceSimulationStateType, PosDeviceSimulationTriggerType>.Transition arg)
+        {
+            WriteTimedDebug($"Pos transition from {arg.Source} to {arg.Destination}");
+
+            try
+            {
+                //var conditionalValue = await this.StateManager.TryGetStateAsync<StateTransitionHistory<PosDeviceSimulationStateType>>("transitionHistory");
+
+                //StateTransitionHistory<PosDeviceSimulationStateType> history;
+
+                //if (conditionalValue.HasValue)
+                //{
+                //    history = StateTransitionHistory<PosDeviceSimulationStateType>.AddTransition(arg.Destination, conditionalValue.Value);
+                //}
+                //else
+                //{
+                //    history = new StateTransitionHistory<PosDeviceSimulationStateType>(arg.Destination);
+                //}
+
+                //await this.StateManager.SetStateAsync<StateTransitionHistory<PosDeviceSimulationStateType>>("transitionHistory", history);
+            }
+
+            catch (Exception ex)
+            {
+                WriteTimedDebug("Unable to save transition history");
+            }
+        }
     }
 
     public enum PosDeviceSimulationTriggerType
@@ -80,9 +118,8 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         InitializeActor = 1,
         GoIdle = 2,
         GetNextInLine = 4,
-        WaitForConsumer = 8,
-        QueueCheckoutPending = 16,
-        ProcessCheckoutPending = 32
+        CallCheckoutCompletePending = 64,
+        WaitForConsumerToCheckout = 128
         //CallCheckoutCompletePending = 8,
         //QueueCheckoutPending = 16
         //Registering = 16,
@@ -101,9 +138,11 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
         ActorInitializing = 2,
         Idle = 4,
         NextInLine = 8,
-        WaitingForConsumer = 16,
-        CheckoutPendingQueued = 32,
-        ProcessingCheckoutPending = 64,
+        CallingCheckoutCompletePending = 16,
+        WaitingForConsumerToCheckout = 32,
+        //WaitingForConsumer = 16,
+        //CheckoutPendingQueued = 32,
+        //ProcessingCheckoutPending = 64,
         //Registering = 16,
         //Registered = 32,
         //TxStarted = 64,
