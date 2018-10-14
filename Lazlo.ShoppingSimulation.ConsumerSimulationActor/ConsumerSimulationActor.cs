@@ -148,7 +148,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                     break;
 
                 //case ConsumerSimulationStateType.CheckingOut:           // Checkout must have failed, try again?
-                case ConsumerSimulationStateType.PosAssigned:
+                case ConsumerSimulationStateType.WaitingToCheckout:
                     await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.Checkout);
                     break;
 
@@ -276,25 +276,36 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             try
             {
                 Guid posId = await StateManager.GetStateAsync<Guid>(PosDeviceActorIdKey).ConfigureAwait(false);
-                PosDeviceModes posDeviceMode = await StateManager.GetStateAsync<PosDeviceModes>(PosDeviceModeKey);
-                
+                PosDeviceModes posDeviceMode = await StateManager.GetStateAsync<PosDeviceModes>(PosDeviceModeKey).ConfigureAwait(false);
+
                 string checkoutLicenseCode;
 
-                if(posDeviceMode == PosDeviceModes.ConsumerScans)
+                var existingTransaction = await StateManager.TryGetStateAsync<string>(ActionLicenseCodeKey).ConfigureAwait(false);
+
+                if(existingTransaction.HasValue)
                 {
-                    ActorId posActorId = new ActorId(posId);
-
-                    IPosDeviceSimulationActor posActor = ActorProxy.Create<IPosDeviceSimulationActor>(posActorId, PosDeviceServiceUri);
-
-                    checkoutLicenseCode = await posActor.ConsumerScansPos().ConfigureAwait(false);
+                    checkoutLicenseCode = existingTransaction.Value;
                 }
 
                 else
                 {
-                    checkoutLicenseCode = await RetrieveCheckoutLicenseCode().ConfigureAwait(false);
-                }
+                    if (posDeviceMode == PosDeviceModes.ConsumerScans)
+                    {
+                        ActorId posActorId = new ActorId(posId);
 
-                await StateManager.SetStateAsync(ActionLicenseCodeKey, checkoutLicenseCode);
+                        IPosDeviceSimulationActor posActor = ActorProxy.Create<IPosDeviceSimulationActor>(posActorId, PosDeviceServiceUri);
+
+                        checkoutLicenseCode = await posActor.ConsumerScansPos().ConfigureAwait(false);
+                    }
+
+                    else
+                    {
+                        checkoutLicenseCode = await RetrieveCheckoutLicenseCode().ConfigureAwait(false);
+                    }
+
+                    await StateManager.SetStateAsync(ActionLicenseCodeKey, checkoutLicenseCode).ConfigureAwait(false);
+                    await StateManager.SaveStateAsync().ConfigureAwait(false);
+                }
 
                 var channelSelections = await CreateChannelSelections();
 
@@ -352,29 +363,24 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
                 string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
 
+                var response = JsonConvert.DeserializeObject<SmartResponse<CheckoutResponse>>(responseJson);
+
                 if (message.IsSuccessStatusCode)
                 {
                     WriteTimedDebug($"Ticket Checkout Successful");
-
-                    var response = JsonConvert.DeserializeObject<SmartResponse<CheckoutResponse>>(responseJson);
 
                     await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
                 }
 
                 else
                 {
-                    var response = JsonConvert.DeserializeObject<SmartResponse<string>>(responseJson);
-
-                    if (response.Error.Message != "No open draws")
-                    {
-                        throw new CorrelationException($"Ticket Checkout request failed: {message.StatusCode} {response.Error.Message}") { CorrelationRefId = checkoutRequest.CorrelationRefId };
-                    }
+                    throw new CorrelationException($"Ticket Checkout request failed: {message.StatusCode} {response.Error.Message}") { CorrelationRefId = checkoutRequest.CorrelationRefId };
                 }
             }
             catch (Exception ex)
             {
                 WriteTimedDebug(ex);
-                // TODO Fire a trigger to restart checkout process
+                await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.ApproachPos);   // Reset
             }
         }
 
@@ -462,6 +468,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         {
             await StateManager.SetStateAsync(PosDeviceActorIdKey, posDeviceActorId).ConfigureAwait(false);
             await StateManager.SetStateAsync(PosDeviceModeKey, posDeviceMode).ConfigureAwait(false);
+
+            await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.ApproachPos);
         }
 
         public async Task<string> PosScansConsumer()

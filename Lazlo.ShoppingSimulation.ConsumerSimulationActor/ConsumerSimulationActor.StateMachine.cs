@@ -53,11 +53,15 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
             _StateMachine.Configure(ConsumerSimulationStateType.PosAssigned)
                 .OnEntryFromAsync(_AssignPosTrigger, async (a, b) => await AssignPosAsync(a, b))
+                .Permit(ConsumerSimulationWorkflowActions.ApproachPos, ConsumerSimulationStateType.WaitingToCheckout);
+
+            _StateMachine.Configure(ConsumerSimulationStateType.WaitingToCheckout)
                 .Permit(ConsumerSimulationWorkflowActions.Checkout, ConsumerSimulationStateType.CheckingOut);
             
             _StateMachine.Configure(ConsumerSimulationStateType.CheckingOut)
                 .OnEntryAsync(async () => await CreateTicketCheckoutRequest())
-				.Permit(ConsumerSimulationWorkflowActions.WaitForTicketsToRender, ConsumerSimulationStateType.WaitingForTicketsToRender);
+				.Permit(ConsumerSimulationWorkflowActions.WaitForTicketsToRender, ConsumerSimulationStateType.WaitingForTicketsToRender)
+                .Permit(ConsumerSimulationWorkflowActions.ApproachPos, ConsumerSimulationStateType.WaitingToCheckout);  //Checkout failed
 
             _StateMachine.Configure(ConsumerSimulationStateType.WaitingForTicketsToRender)
                 .Permit(ConsumerSimulationWorkflowActions.CheckTicketStatus, ConsumerSimulationStateType.CheckingTicketStatus);
@@ -105,6 +109,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         RetrieveChannelGroups = 2,
 		GetInLine,
         AssignPos,
+        ApproachPos,
 		Checkout,
 		WaitForTicketsToRender,
         CheckTicketStatus
@@ -119,9 +124,10 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 		RetrievingChannelGroups = 4,
 		WaitingInLine = 8,
         PosAssigned = 16,
-		CheckingOut = 32,
-        WaitingForTicketsToRender = 64,
-		CheckingTicketStatus = 128,
+        WaitingToCheckout = 32,
+		CheckingOut = 64,
+        WaitingForTicketsToRender = 128,
+		CheckingTicketStatus = 256,
         DeadManWalking = 8196
     }
 }
