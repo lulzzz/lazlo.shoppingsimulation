@@ -13,8 +13,6 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lazlo.ShoppingSimulation.Co
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lazlo.ShoppingSimulation.ConsumerSimulationActor", "Lazlo.ShoppingSimulation.ConsumerSimulationActor\Lazlo.ShoppingSimulation.ConsumerSimulationActor.csproj", "{8993825A-3295-4851-A61B-85A0A41D5A74}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lazlo.ShoppingSimulation.TicketSimulationActor", "Lazlo.ShoppingSimulation.TicketSimulationActor\Lazlo.ShoppingSimulation.TicketSimulationActor.csproj", "{6C9C07FB-88BA-4339-81E4-E84CDB89B514}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Actors", "Actors", "{A0E8B6BE-185D-41CA-B4F2-2651ACA5B892}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SolutionItems", "SolutionItems", "{72E32AB8-59D1-4F82-B72E-885A45D1941C}"
@@ -22,7 +20,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SolutionItems", "SolutionIt
 		Directory.Build.props = Directory.Build.props
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lazlo.ShoppingSimulation.ConsumerLineService", "Lazlo.ShoppingSimulation.ConsumerLineService\Lazlo.ShoppingSimulation.ConsumerLineService.csproj", "{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lazlo.ShoppingSimulation.ConsumerLineService", "Lazlo.ShoppingSimulation.ConsumerLineService\Lazlo.ShoppingSimulation.ConsumerLineService.csproj", "{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lazlo.ShoppingSimulation.ConsumerExchangeActor", "Lazlo.ShoppingSimulation.ConsumerExchangeActor\Lazlo.ShoppingSimulation.ConsumerExchangeActor.csproj", "{A19DE8E8-48CA-4FB4-A09E-1DBFA835B50B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -72,14 +72,6 @@ Global
 		{8993825A-3295-4851-A61B-85A0A41D5A74}.Release|Any CPU.Build.0 = Release|Any CPU
 		{8993825A-3295-4851-A61B-85A0A41D5A74}.Release|x64.ActiveCfg = Release|Any CPU
 		{8993825A-3295-4851-A61B-85A0A41D5A74}.Release|x64.Build.0 = Release|Any CPU
-		{6C9C07FB-88BA-4339-81E4-E84CDB89B514}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{6C9C07FB-88BA-4339-81E4-E84CDB89B514}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{6C9C07FB-88BA-4339-81E4-E84CDB89B514}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{6C9C07FB-88BA-4339-81E4-E84CDB89B514}.Debug|x64.Build.0 = Debug|Any CPU
-		{6C9C07FB-88BA-4339-81E4-E84CDB89B514}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{6C9C07FB-88BA-4339-81E4-E84CDB89B514}.Release|Any CPU.Build.0 = Release|Any CPU
-		{6C9C07FB-88BA-4339-81E4-E84CDB89B514}.Release|x64.ActiveCfg = Release|Any CPU
-		{6C9C07FB-88BA-4339-81E4-E84CDB89B514}.Release|x64.Build.0 = Release|Any CPU
 		{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -88,6 +80,14 @@ Global
 		{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}.Release|Any CPU.Build.0 = Release|Any CPU
 		{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}.Release|x64.ActiveCfg = Release|Any CPU
 		{E9CD54EB-A2FD-45D0-963A-A38BA30DFB0A}.Release|x64.Build.0 = Release|Any CPU
+		{A19DE8E8-48CA-4FB4-A09E-1DBFA835B50B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A19DE8E8-48CA-4FB4-A09E-1DBFA835B50B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A19DE8E8-48CA-4FB4-A09E-1DBFA835B50B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A19DE8E8-48CA-4FB4-A09E-1DBFA835B50B}.Debug|x64.Build.0 = Debug|Any CPU
+		{A19DE8E8-48CA-4FB4-A09E-1DBFA835B50B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A19DE8E8-48CA-4FB4-A09E-1DBFA835B50B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A19DE8E8-48CA-4FB4-A09E-1DBFA835B50B}.Release|x64.ActiveCfg = Release|Any CPU
+		{A19DE8E8-48CA-4FB4-A09E-1DBFA835B50B}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -95,7 +95,7 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{8104C57F-653C-4F39-9D72-D31A85780182} = {A0E8B6BE-185D-41CA-B4F2-2651ACA5B892}
 		{8993825A-3295-4851-A61B-85A0A41D5A74} = {A0E8B6BE-185D-41CA-B4F2-2651ACA5B892}
-		{6C9C07FB-88BA-4339-81E4-E84CDB89B514} = {A0E8B6BE-185D-41CA-B4F2-2651ACA5B892}
+		{A19DE8E8-48CA-4FB4-A09E-1DBFA835B50B} = {A0E8B6BE-185D-41CA-B4F2-2651ACA5B892}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {6A25BB6B-602B-4629-A1D8-C57D6E5FA50E}

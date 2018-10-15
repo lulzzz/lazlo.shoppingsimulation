@@ -6,20 +6,14 @@
     <IsServiceFabricServiceProject>True</IsServiceFabricServiceProject>
     <RuntimeIdentifier>win7-x64</RuntimeIdentifier>
     <TargetLatestRuntimePatch>False</TargetLatestRuntimePatch>
+    <UpdateServiceFabricManifestEnabled>True</UpdateServiceFabricManifestEnabled>
+    <ServicePackagePath>PackageRoot</ServicePackagePath>
+    <ServicePackagePrefix>$(MSBuildProjectName)</ServicePackagePrefix>
+    <FabActUtilWorkingDir>$(BaseIntermediateOutputPath)\FabActUtilTemp</FabActUtilWorkingDir>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Remove="Images\christina.png" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <EmbeddedResource Include="Images\christina.png" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Lazlo.Gaming.Random" Version="1.0.9" />
-    <PackageReference Include="Lazlo.Shopping.Common" Version="1.0.15" />
-    <PackageReference Include="Microsoft.ServiceFabric.Services" Version="3.2.187" />
+    <PackageReference Include="Microsoft.ServiceFabric.Actors" Version="3.2.187" />
   </ItemGroup>
 
   <ItemGroup>

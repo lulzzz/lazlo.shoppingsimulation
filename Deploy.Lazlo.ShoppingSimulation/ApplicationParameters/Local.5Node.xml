@@ -7,6 +7,6 @@
     <Parameter Name="Lazlo.ShoppingSimulation.InitializationService_InstanceCount" Value="1" />
     <Parameter Name="PosDeviceSimulationActorService_PartitionCount" Value="1" />
     <Parameter Name="ConsumerSimulationActorService_PartitionCount" Value="1" />
-    <Parameter Name="TicketSimulationActor_PartitionCount" Value="1" />
+    <Parameter Name="ConsumerExchangeActorService_PartitionCount" Value="1" />
   </Parameters>
 </Application>

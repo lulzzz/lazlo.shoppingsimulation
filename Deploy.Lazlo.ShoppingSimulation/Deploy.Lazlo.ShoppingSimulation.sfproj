@@ -32,11 +32,11 @@
     <Content Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Lazlo.ShoppingSimulation.ConsumerExchangeActor\Lazlo.ShoppingSimulation.ConsumerExchangeActor.csproj" />
     <ProjectReference Include="..\Lazlo.ShoppingSimulation.ConsumerLineService\Lazlo.ShoppingSimulation.ConsumerLineService.csproj" />
     <ProjectReference Include="..\Lazlo.ShoppingSimulation.ConsumerSimulationActor\Lazlo.ShoppingSimulation.ConsumerSimulationActor.csproj" />
     <ProjectReference Include="..\Lazlo.ShoppingSimulation.InitializationService\Lazlo.ShoppingSimulation.InitializationService.csproj" />
     <ProjectReference Include="..\Lazlo.ShoppingSimulation.PosDeviceSimulationActor\Lazlo.ShoppingSimulation.PosDeviceSimulationActor.csproj" />
-    <ProjectReference Include="..\Lazlo.ShoppingSimulation.TicketSimulationActor\Lazlo.ShoppingSimulation.TicketSimulationActor.csproj" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.Common.targets" />
   <PropertyGroup>

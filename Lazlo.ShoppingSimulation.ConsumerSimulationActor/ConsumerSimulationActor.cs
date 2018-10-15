@@ -160,7 +160,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
         public async Task RetrieveCheckoutStatus()
         {
-            Uri requestUri = GetFullUri("api/v1/shopping/checkout/status");
+            Uri requestUri = GetFullUri("api/v2/shopping/checkout/status");
 
             HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Get, requestUri);
 
@@ -170,7 +170,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
             httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
             httpreq.Headers.Add("lazlo-apilicensecode", appAPiLicenseCode);
-            httpreq.Headers.Add("lazlo-actionlicensecode", checkoutSessionLicenseCode);
+            httpreq.Headers.Add("lazlo-txlicensecode", checkoutSessionLicenseCode);
 
             var message = await _HttpClient.SendAsync(httpreq);
 
