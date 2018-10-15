@@ -13,9 +13,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Lazlo.Common" Version="1.0.4" />
     <PackageReference Include="Lazlo.Gaming.Random" Version="1.0.0" />
-    <PackageReference Include="Lazlo.Shopping.Common" Version="1.0.10" />
+    <PackageReference Include="Lazlo.Shopping.Common" Version="1.0.14" />
     <PackageReference Include="Microsoft.ServiceFabric.Actors" Version="3.2.187" />
     <PackageReference Include="Stateless" Version="4.2.1" />
   </ItemGroup>

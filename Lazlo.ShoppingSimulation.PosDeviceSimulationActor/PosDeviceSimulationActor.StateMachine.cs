@@ -54,7 +54,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
                 .Permit(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout, PosDeviceSimulationStateType.WaitingForConsumerToCheckout);
 
             _Machine.Configure(PosDeviceSimulationStateType.CallingCheckoutCompletePending)
-                .OnEntryAsync(async () => await CheckoutCompletePendingAsync())
+                .OnEntryAsync(async () => await GetLineItemsAsync())
                 .Permit(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout, PosDeviceSimulationStateType.WaitingForConsumerToCheckout);
 
 

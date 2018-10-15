@@ -399,7 +399,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             Debug.WriteLine($"{DateTimeOffset.Now}: {ex}");
         }
 
-        private async Task CheckoutCompletePendingAsync()
+        private async Task GetLineItemsAsync()
         {
             try
             {
@@ -407,29 +407,29 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
                 string checkoutSessionLicenseCode = await StateManager.GetStateAsync<string>(CheckoutLicenseCodeKey);
 
-                Uri requestUri = GetFullUri("api/v3/shopping/checkout/complete/pending");
+                Uri requestUri = GetFullUri("api/v1/shopping/pos/checkout/lineitems");
 
-                SmartRequest<CheckoutCompletePendingRequest> req = new SmartRequest<CheckoutCompletePendingRequest>
-                {
-                    CreatedOn = DateTimeOffset.UtcNow,
-                    Data = new CheckoutCompletePendingRequest
-                    {
-                        CheckoutSessionLicenseCode = checkoutSessionLicenseCode,
-                    },
-                    Latitude = 34.072846D,
-                    Longitude = -84.190285D,
-                    Uuid = "A8C1048F-5A2B-4953-9C71-36581827AFE1"   // Is this even used anymore?
-                };
+                //SmartRequest<CheckoutCompletePendingRequest> req = new SmartRequest<CheckoutCompletePendingRequest>
+                //{
+                //    CreatedOn = DateTimeOffset.UtcNow,
+                //    Data = new CheckoutCompletePendingRequest
+                //    {
+                //        CheckoutSessionLicenseCode = checkoutSessionLicenseCode,
+                //    },
+                //    Latitude = 34.072846D,
+                //    Longitude = -84.190285D,
+                //    Uuid = "A8C1048F-5A2B-4953-9C71-36581827AFE1"   // Is this even used anymore?
+                //};
 
-                string json = JsonConvert.SerializeObject(req);
+                //string json = JsonConvert.SerializeObject(req);
 
-                HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
+                HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Get, requestUri);
 
                 string posDeviceApiLicenseCode = await StateManager.GetStateAsync<string>(PosDeviceApiLicenseCodeKey).ConfigureAwait(false);
 
                 httpreq.Headers.Add("lazlo-apilicensecode", posDeviceApiLicenseCode);
 
-                httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+                //httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
                 DateTimeOffset opStart = DateTimeOffset.UtcNow;
 
@@ -479,7 +479,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
             string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-            SmartResponse<CheckoutResponseBase> response = JsonConvert.DeserializeObject<SmartResponse<CheckoutResponseBase>>(responseJson);
+            SmartResponse<CheckoutSessionCreateResponse> response = JsonConvert.DeserializeObject<SmartResponse<CheckoutSessionCreateResponse>>(responseJson);
 
             if (message.IsSuccessStatusCode)
             {
