@@ -214,26 +214,6 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             }
         }
 
-        public async Task ProcessWorkflow()
-        {
-            WriteTimedDebug($"PosDeviceSimulation ProcessWorkflowEntered: {_Machine.State}");
-
-            switch (_Machine.State)
-            {
-                case PosDeviceSimulationStateType.Idle:
-                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.GetNextInLine);
-                    break;
-
-                case PosDeviceSimulationStateType.WaitingForConsumerToCheckout:
-                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.CallCheckoutCompletePending);
-                    break;
-
-                case PosDeviceSimulationStateType.WaitingForConsumerToPresentQr:
-                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.ScanConsumerQr);
-                    break;
-            }
-        }
-
         public async Task ReceiveReminderAsync(string reminderName, byte[] state, TimeSpan dueTime, TimeSpan period)
         {
             try
@@ -409,20 +389,6 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
                 Uri requestUri = GetFullUri("api/v1/shopping/pos/checkout/lineitems");
 
-                //SmartRequest<CheckoutCompletePendingRequest> req = new SmartRequest<CheckoutCompletePendingRequest>
-                //{
-                //    CreatedOn = DateTimeOffset.UtcNow,
-                //    Data = new CheckoutCompletePendingRequest
-                //    {
-                //        CheckoutSessionLicenseCode = checkoutSessionLicenseCode,
-                //    },
-                //    Latitude = 34.072846D,
-                //    Longitude = -84.190285D,
-                //    Uuid = "A8C1048F-5A2B-4953-9C71-36581827AFE1"   // Is this even used anymore?
-                //};
-
-                //string json = JsonConvert.SerializeObject(req);
-
                 HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Get, requestUri);
 
                 string posDeviceApiLicenseCode = await StateManager.GetStateAsync<string>(PosDeviceApiLicenseCodeKey).ConfigureAwait(false);
@@ -430,10 +396,6 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
                 httpreq.Headers.Add("lazlo-txlicensecode", checkoutSessionCode);
                 httpreq.Headers.Add("lazlo-apilicensecode", posDeviceApiLicenseCode);
-
-                //httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
-                DateTimeOffset opStart = DateTimeOffset.UtcNow;
 
                 HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
 
@@ -443,12 +405,12 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
                 if (message.IsSuccessStatusCode)
                 {
-                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout);
+                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToPay);
                 }
 
                 else
                 {
-                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout);
+                    throw new Exception($"CheckoutCompletePending failed: {responseJson}");
                 }
             }
 
@@ -456,6 +418,54 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             {
                 WriteTimedDebug(ex);
                 await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToCheckout);
+            }
+        }
+
+        public async Task CallCheckoutCompleteAsync()
+        {
+            try
+            {
+                Uri requestUri = GetFullUri("api/v2/shopping/pos/checkout/complete");
+
+                SmartRequest<CheckoutCompletePosRequest> req = new SmartRequest<CheckoutCompletePosRequest>
+                {
+                    Data = new CheckoutCompletePosRequest
+                    {
+                        AmountPaid = 5.29M
+                    }
+                };
+
+                HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Put, requestUri);
+
+                string json = JsonConvert.SerializeObject(req);
+
+                httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+                string checkoutSessionCode = await StateManager.GetStateAsync<string>(CheckoutLicenseCodeKey).ConfigureAwait(false);
+                string posDeviceApiLicenseCode = await StateManager.GetStateAsync<string>(PosDeviceApiLicenseCodeKey).ConfigureAwait(false);
+
+                httpreq.Headers.Add("lazlo-apilicensecode", posDeviceApiLicenseCode);
+                httpreq.Headers.Add("lazlo-txlicensecode", checkoutSessionCode);
+
+                HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
+
+                string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                if (message.IsSuccessStatusCode)
+                {
+                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.GoIdle);
+                }
+
+                else
+                {
+                    throw new Exception($"CheckoutComplete failed: {responseJson}");
+                }
+            }
+
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToPay);
             }
         }
 
