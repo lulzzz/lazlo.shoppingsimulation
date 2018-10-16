@@ -7,6 +7,11 @@ using Microsoft.ServiceFabric.Actors;
 using Microsoft.ServiceFabric.Actors.Runtime;
 using Microsoft.ServiceFabric.Actors.Client;
 using Lazlo.ShoppingSimulation.Common.Interfaces;
+using System.Net.Http;
+using Lazlo.Common.Models;
+using Newtonsoft.Json;
+using Lazlo.Common.Responses;
+using Lazlo.ShoppingSimulation.Common;
 
 namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
 {
@@ -21,6 +26,11 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
     [StatePersistence(StatePersistence.Persisted)]
     internal class ConsumerExchangeActor : Actor, IConsumerExchangeActor
     {
+        const bool _UseLocalHost = false;
+        string _UriBase = "devshopapi.services.32point6.com";
+
+        protected HttpClient _HttpClient = new HttpClient();
+
         /// <summary>
         /// Initializes a new instance of ConsumerExchangeActor
         /// </summary>
@@ -40,6 +50,48 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
             ActorEventSource.Current.ActorMessage(this, "Actor activated.");
 
             return Task.CompletedTask;
+        }
+
+        private async Task<List<MerchantDisplay>> RetrieveMerchandiseAsync(Guid checkoutCorrelationRefId)
+        {
+            Uri requestUri = GetFullUri("api/v1/claim/ticket/exchange/merchandise");
+
+            HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Get, requestUri);
+
+            //httpreq.Headers.Add("Lazlo-SimulationLicenseCode", SimulationLicenseCode);
+            //httpreq.Headers.Add("Lazlo-AuthorityLicenseCode", AuthorityLicenseCode);
+            httpreq.Headers.Add("Lazlo-CorrelationRefId", checkoutCorrelationRefId.ToString());
+
+            HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
+
+            if (message.IsSuccessStatusCode)
+            {
+                string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                var statusResponse = JsonConvert.DeserializeObject<SmartResponse<ClaimExchangeMerchantsResponse>>(responseJson);
+
+                return statusResponse.Data.Merchandise;
+            }
+
+            else
+            {
+                string error = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                throw new CorrelationException($"(Simulator Workflow) Player - Retrieve Merchandise Failed: {message.StatusCode} {error}") { CorrelationRefId = checkoutCorrelationRefId };
+            }
+        }
+
+        private Uri GetFullUri(string fragment)
+        {
+            if (_UseLocalHost)
+            {
+                return new Uri($"http://localhost:8343/{fragment}");
+            }
+
+            else
+            {
+                return new Uri($"http://{_UriBase}/{fragment}");
+            }
         }
     }
 }

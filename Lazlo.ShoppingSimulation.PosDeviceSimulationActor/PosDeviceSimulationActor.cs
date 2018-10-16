@@ -426,7 +426,9 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
                 HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Get, requestUri);
 
                 string posDeviceApiLicenseCode = await StateManager.GetStateAsync<string>(PosDeviceApiLicenseCodeKey).ConfigureAwait(false);
+                string checkoutSessionCode = await StateManager.GetStateAsync<string>(CheckoutLicenseCodeKey).ConfigureAwait(false);
 
+                httpreq.Headers.Add("lazlo-txlicensecode", checkoutSessionCode);
                 httpreq.Headers.Add("lazlo-apilicensecode", posDeviceApiLicenseCode);
 
                 //httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
