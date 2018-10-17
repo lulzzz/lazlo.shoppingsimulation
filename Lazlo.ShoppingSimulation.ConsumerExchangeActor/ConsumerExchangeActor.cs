@@ -24,10 +24,15 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
     ///  - None: State is kept in memory only and not replicated.
     /// </remarks>
     [StatePersistence(StatePersistence.Persisted)]
-    internal class ConsumerExchangeActor : Actor, IConsumerExchangeActor
+    public partial class ConsumerExchangeActor : Actor, IConsumerExchangeActor, IRemindable
     {
         const bool _UseLocalHost = false;
         string _UriBase = "devshopapi.services.32point6.com";
+
+        const string ConsumerLicenseCodeKey = "ConsumerLicenseCodeKey";
+        const string EntitiesKey = "EntitiesKey";
+
+        const string WorkflowReminderKey = "WorkflowReminderKey";
 
         protected HttpClient _HttpClient = new HttpClient();
 
@@ -92,6 +97,26 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
             {
                 return new Uri($"http://{_UriBase}/{fragment}");
             }
+        }
+
+        public async Task InitializeAsync(string consumerLicenseCode, List<EntitySecret> entities)
+        {
+            await _StateMachine.FireAsync(_InitializeTrigger, consumerLicenseCode, entities);
+        }
+
+        private async Task OnInitialized(string consumerLicenseCode, List<EntitySecret> entities)
+        {
+            await RegisterReminderAsync(WorkflowReminderKey, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+
+            await StateManager.SetStateAsync(ConsumerLicenseCodeKey, consumerLicenseCode);
+            await StateManager.SetStateAsync(EntitiesKey, entities);
+
+            await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.GoIdle);
+        }
+
+        private async Task ValidateAsync()
+        {
+            
         }
     }
 }
