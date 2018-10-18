@@ -178,8 +178,20 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
             if (message.IsSuccessStatusCode)
             {
+                var statusResponse = JsonConvert.DeserializeObject<SmartResponse<CheckoutStatusResponse>>(responseJson);
+
+                if(statusResponse.Data.TicketStatuses.All(z => z.GeneratedOn.HasValue))
+                {
+
+                }
+
+                else
+                {
+
+                }
+                               
                 await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
-                //var statusResponse = JsonConvert.DeserializeObject<SmartResponse<CheckoutStatusResponse>>(responseJson);
+                
             }
 
             else
