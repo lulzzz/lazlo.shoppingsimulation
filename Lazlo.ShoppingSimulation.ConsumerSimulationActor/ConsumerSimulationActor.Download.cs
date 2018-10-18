@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Lazlo.Common.Models;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
@@ -6,91 +7,189 @@ using System.Net.Http.Headers;
 using System.Security;
 using System.Text;
 using System.Threading.Tasks;
+using System.Linq;
+using Lazlo.ShoppingSimulation.Common;
+using Lazlo.Utility;
+using ImageMagick;
+using System.Diagnostics;
 
 namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 {
     public partial class ConsumerSimulationActor
     {
-        //private async Task RetrieveTicketMediaAsync(List<CheckoutSummary> summaries, CheckoutSummary targetSummary, TicketStatusDisplay ticketStatus)
-        //{
-        //    WriteTimedDebug($"Begin retrieve ticket media. {ticketStatus.TicketTemplateType} {ticketStatus.TicketRefId} {ticketStatus.MediaSize}\n{ticketStatus.SasUri}");
+        private async Task DownloadNextTicket()
+        {
+            try
+            {
+                var pendingTickets = await StateManager.GetStateAsync<List<TicketStatusDisplay>>(PendingTicketsKey);
 
-        //    int chunkSize = ticketStatus.MediaSize / 100;
+                TicketStatusDisplay ticket = pendingTickets.First();
 
-        //    chunkSize = chunkSize > 5000 ? chunkSize : 5000;
+                EntitySecret entitySecret = await RetrieveEntityMediaAsync(ticket);
 
-        //    long read;
+                if(entitySecret != null)
+                {
+                    var secrets = await StateManager.GetOrAddStateAsync(SecretsKey, new List<EntitySecret>());
 
-        //    string mediaType = null;
+                    secrets.Add(entitySecret);
 
-        //    using (HttpClient client = new HttpClient())
-        //    using (MemoryStream ms = new MemoryStream())
-        //    {
-        //        long offset = 0;
+                    await StateManager.SetStateAsync(SecretsKey, secrets);
+                }
 
-        //        do
-        //        {
-        //            HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Get, new Uri(ticketStatus.SasUri));
-        //            req.Headers.Range = new RangeHeaderValue(offset, offset + chunkSize - 1);
+                pendingTickets.Remove(ticket);
 
-        //            HttpResponseMessage message = await client.SendAsync(req).ConfigureAwait(false);
+                await StateManager.SetStateAsync(PendingTicketsKey, pendingTickets);
 
-        //            if (!message.IsSuccessStatusCode)
-        //            {
-        //                // If we've reached forbidden the token has expired. If not found, we may have already downloaded it, but were demoted.
-        //                if (message.StatusCode == System.Net.HttpStatusCode.Forbidden
-        //                   || message.StatusCode == System.Net.HttpStatusCode.NotFound)
-        //                {
-        //                    targetSummary.Tickets.Remove(ticketStatus);
+                if(pendingTickets.Count == 0)
+                {
+                    Debugger.Break();
+                }
 
-        //                    if (targetSummary.Tickets.Count == 0 && targetSummary.TicketSecrets.Count == 0)
-        //                    {
-        //                        summaries.Remove(targetSummary);
-        //                    }
+                else
+                {
+                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.DownloadTickets);
+                }
+            }
 
-        //                    await StateManager.SetStateAsync(TicketSummariesKey, summaries).ConfigureAwait(false);
-        //                }
+            catch (Exception ex)
+            {
+                WriteTimedDebug(ex);
+                await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.DownloadTickets);
+            }
+        }
 
-        //                throw new SecurityException($"Error occurred while downloading ticket image {message.StatusCode} {offset} - {offset + chunkSize - 1}");
-        //            }
+        private async Task<EntitySecret> RetrieveEntityMediaAsync(TicketStatusDisplay ticket)
+        {
+            WriteTimedDebug($"Begin retrieve ticket media. {ticket.TicketTemplateType} {ticket.TicketRefId} {ticket.MediaSize}\n{ticket.SasUri}");
 
-        //            byte[] buffer = await message.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+            int chunkSize = ticket.MediaSize / 100;
 
-        //            ms.Write(buffer, 0, buffer.Length);
+            chunkSize = chunkSize > 5000 ? chunkSize : 5000;
 
-        //            read = message.Content.Headers.ContentLength.Value;
+            long read;
 
-        //            offset += read;
+            string mediaType = null;
 
-        //            mediaType = message.Content.Headers.ContentType.MediaType;
-        //        }
+            using (HttpClient client = new HttpClient())
+            using (MemoryStream ms = new MemoryStream())
+            {
+                long offset = 0;
 
-        //        while (offset < ticketStatus.MediaSize);
+                do
+                {
+                    HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Get, new Uri(ticket.SasUri));
+                    req.Headers.Range = new RangeHeaderValue(offset, offset + chunkSize - 1);
 
-        //        TicketSecrets ticketSecret = await ExtractTicketSecrets(targetSummary, ticketStatus, mediaType, ms);
+                    HttpResponseMessage message = await client.SendAsync(req).ConfigureAwait(false);
 
-        //        if (ticketSecret != null)
-        //        {
-        //            await SendTicketReceived(ticketSecret).ConfigureAwait(false);
+                    if (!message.IsSuccessStatusCode)
+                    {
+                        // If we've reached forbidden the token has expired. If not found, we may have already downloaded it, but were demoted.
+                        if (message.StatusCode == System.Net.HttpStatusCode.Forbidden
+                           || message.StatusCode == System.Net.HttpStatusCode.NotFound)
+                        {
+                            return null;
+                        }
 
-        //            targetSummary.TicketSecrets.Add(ticketSecret);
-        //        }
+                        throw new Exception("Error downloading media");
+                    }
 
-        //        targetSummary.Tickets.Remove(ticketStatus);
+                    byte[] buffer = await message.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
 
-        //        if (targetSummary.Tickets.Count == 0 && targetSummary.TicketSecrets.Count == 0)
-        //        {
-        //            summaries.Remove(targetSummary);
-        //        }
+                    ms.Write(buffer, 0, buffer.Length);
 
-        //        await StateManager.SetStateAsync(TicketSummariesKey, summaries).ConfigureAwait(false);
+                    read = message.Content.Headers.ContentLength.Value;
 
-        //        WriteTimedDebug($"Removed status. {ticketStatus.TicketRefId}");
+                    offset += read;
 
-        //        int ticketsReceived = await StateManager.GetStateAsync<int>(TicketsReceivedKey).ConfigureAwait(false);
+                    mediaType = message.Content.Headers.ContentType.MediaType;
+                }
 
-        //        await StateManager.SetStateAsync(TicketsReceivedKey, ticketsReceived + 1).ConfigureAwait(false);
-        //    }
-        //}
+                while (offset < ticket.MediaSize);
+
+                return await ExtractTicketSecrets(ticket, mediaType, ms);
+            }
+        }
+
+        private async Task<EntitySecret> ExtractTicketSecrets(TicketStatusDisplay ticketStatus, string mediaType, MemoryStream ticketStream)
+        {
+            string ticketLicenseCode = null;
+
+            byte[] ticketBytes = ticketStream.ToArray();
+
+            string encodedHash = CryptographyHelper.HashSha256(ticketBytes);
+
+            if (mediaType == "video/mp4")
+            {
+                ticketStream.Position = 0;
+
+                ticketLicenseCode = await TryParseMp4(ticketStream);
+
+                if (ticketLicenseCode != null)
+                {
+                    return new EntitySecret
+                    {
+                        Hash = encodedHash,
+                        LicenseCode = ticketLicenseCode
+                    };
+                }
+            }
+
+            else
+            {
+                string qrCode = QrCodeHelper.ParseImage(ticketBytes);
+
+                ticketLicenseCode = await ExtracTicketLicenseCodeViaTagsAsync(ticketStream).ConfigureAwait(false);
+
+                if (ticketLicenseCode != qrCode)
+                {
+                    WriteTimedDebug("Tag mismatch");
+                }
+            }
+
+            if (ticketLicenseCode == null)
+            {
+                return null;
+            }
+
+            else
+            {
+                return new EntitySecret
+                {
+                    Hash = encodedHash,
+                    LicenseCode = ticketLicenseCode
+                };
+            }
+        }
+
+        private static async Task<string> TryParseMp4(Stream mp4Stream)
+        {
+            try
+            {
+                var tags = await Mp4TagExtractor.ParseTags(mp4Stream);
+
+                var commentTag = tags.FirstOrDefault(z => z.Key == "�cmt");
+
+                return commentTag.Key == "�cmt" ? commentTag.Value : null;
+            }
+
+            catch
+            {
+                return null;
+            }
+        }
+
+        private Task<string> ExtracTicketLicenseCodeViaTagsAsync(Stream imageStream)
+        {
+            imageStream.Position = 0;
+
+            MagickImage magickImage = new MagickImage(imageStream);
+
+            ExifProfile exifProfile = magickImage.GetExifProfile();
+
+            var target = exifProfile?.Values?.FirstOrDefault(z => z.Tag == ExifTag.ImageUniqueID);
+
+            return Task.FromResult((string)target?.Value);
+        }
     }
 }

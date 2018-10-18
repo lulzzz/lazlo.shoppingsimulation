@@ -68,7 +68,40 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
             _StateMachine.Configure(ConsumerSimulationStateType.CheckingTicketStatus)
                 .OnEntryAsync(async () => await RetrieveCheckoutStatus())
-                .Permit(ConsumerSimulationWorkflowActions.WaitForTicketsToRender, ConsumerSimulationStateType.WaitingForTicketsToRender);
+                .Permit(ConsumerSimulationWorkflowActions.WaitForTicketsToRender, ConsumerSimulationStateType.WaitingForTicketsToRender)
+                .Permit(ConsumerSimulationWorkflowActions.DownloadTickets, ConsumerSimulationStateType.DownloadingTickets);
+
+            _StateMachine.Configure(ConsumerSimulationStateType.DownloadingTickets)
+                .Permit(ConsumerSimulationWorkflowActions.DownloadTicket, ConsumerSimulationStateType.DownloadingTicket);
+
+            _StateMachine.Configure(ConsumerSimulationStateType.DownloadingTicket)
+                .OnEntryAsync(async () => await DownloadNextTicket())
+                .Permit(ConsumerSimulationWorkflowActions.DownloadTickets, ConsumerSimulationStateType.DownloadingTickets);
+        }
+
+        public async Task ProcessWorkflow()
+        {
+            WriteTimedDebug($"ConsumerSimulation ProcessWorkflowEntered {_StateMachine.State}");
+
+            switch (_StateMachine.State)
+            {
+                case ConsumerSimulationStateType.RetrievingChannelGroups:
+                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.RetrieveChannelGroups);
+                    break;
+
+                //case ConsumerSimulationStateType.CheckingOut:           // Checkout must have failed, try again?
+                case ConsumerSimulationStateType.WaitingToCheckout:
+                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.Checkout);
+                    break;
+
+                case ConsumerSimulationStateType.WaitingForTicketsToRender:
+                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.CheckTicketStatus);
+                    break;
+
+                case ConsumerSimulationStateType.DownloadingTickets:
+                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.DownloadTicket);
+                    break;
+            }
         }
 
         private Task LogTransitionAsync(StateMachine<ConsumerSimulationStateType, ConsumerSimulationWorkflowActions>.Transition arg)
@@ -104,15 +137,17 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
     public enum ConsumerSimulationWorkflowActions
     {
-        CreateActor = 0,
-        InitializeActor = 1,
-        RetrieveChannelGroups = 2,
+        CreateActor,
+        InitializeActor,
+        RetrieveChannelGroups,
 		GetInLine,
         AssignPos,
         ApproachPos,
 		Checkout,
 		WaitForTicketsToRender,
-        CheckTicketStatus
+        CheckTicketStatus,
+        DownloadTickets,
+        DownloadTicket
     }
 
     [Flags]
@@ -128,6 +163,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 		CheckingOut = 64,
         WaitingForTicketsToRender = 128,
 		CheckingTicketStatus = 256,
+        DownloadingTickets = 512,
+        DownloadingTicket = 1024,
         DeadManWalking = 8196
     }
 }

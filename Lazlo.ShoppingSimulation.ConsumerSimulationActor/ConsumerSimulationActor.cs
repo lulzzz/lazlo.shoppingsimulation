@@ -42,6 +42,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         const string ChannelGroupsKey = "ChannelGroupsKey";
         const string KillMeReminderKey = "KillMeReminderKey";
         const string WorkflowReminderKey = "WorkflowReminderKey";
+        const string PendingTicketsKey = "PendingTicketsKey";
+        const string SecretsKey = "SecretsKey";
 
         const bool _UseLocalHost = false;
         string _UriBase = "devshopapi.services.32point6.com";
@@ -137,26 +139,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             }
         }
 
-        public async Task ProcessWorkflow()
-        {
-            WriteTimedDebug($"ConsumerSimulation ProcessWorkflowEntered {_StateMachine.State}");
 
-            switch (_StateMachine.State)
-            {
-                case ConsumerSimulationStateType.RetrievingChannelGroups:
-                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.RetrieveChannelGroups);
-                    break;
-
-                //case ConsumerSimulationStateType.CheckingOut:           // Checkout must have failed, try again?
-                case ConsumerSimulationStateType.WaitingToCheckout:
-                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.Checkout);
-                    break;
-
-                case ConsumerSimulationStateType.WaitingForTicketsToRender:
-                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.CheckTicketStatus);                    
-                    break;
-            }
-        }
 
         public async Task RetrieveCheckoutStatus()
         {
@@ -182,16 +165,14 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
                 if(statusResponse.Data.TicketStatuses.All(z => z.GeneratedOn.HasValue))
                 {
-
+                    await StateManager.SetStateAsync(PendingTicketsKey, statusResponse.Data.TicketStatuses);
+                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.DownloadTickets);
                 }
 
                 else
                 {
-
+                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
                 }
-                               
-                await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
-                
             }
 
             else
