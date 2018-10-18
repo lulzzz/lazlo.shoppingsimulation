@@ -309,14 +309,13 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
                 var checkoutRequest = new SmartRequest<CartCheckoutRequest>
                 {
-                    CorrelationRefId = Guid.NewGuid(),
                     CreatedOn = DateTimeOffset.UtcNow,
                     Latitude = 34.072846D,
                     Longitude = -84.190285D,
                     Uuid = "A8C1048F-5A2B-4953-9C71-36581827AFE1",
                     Data = new CartCheckoutRequest
                     {
-                        Cart = new Cart
+                        Cart = new CartRequest
                         {
                             ChannelRequests = channelSelections
                         },
@@ -332,6 +331,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                     }
                 };
 
+                Guid correlationRefId = Guid.NewGuid();
+
                 Uri requestUri = GetFullUri("api/v1/shopping/consumer/checkout");
 
                 HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
@@ -342,7 +343,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                 httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
                 httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
                 httpreq.Headers.Add("lazlo-txlicensecode", checkoutLicenseCode);
-                httpreq.Headers.Add("lazlo-correlationrefId", checkoutRequest.CorrelationRefId.ToString());
+                httpreq.Headers.Add("lazlo-correlationrefId", correlationRefId.ToString());
 
                 string json = JsonConvert.SerializeObject(checkoutRequest);
 
@@ -367,7 +368,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
                 else
                 {
-                    throw new CorrelationException($"Ticket Checkout request failed: {message.StatusCode} {response.Error.Message}") { CorrelationRefId = checkoutRequest.CorrelationRefId };
+                    throw new CorrelationException($"Ticket Checkout request failed: {message.StatusCode} {response.Error.Message}") { CorrelationRefId = correlationRefId };
                 }
             }
             catch (Exception ex)

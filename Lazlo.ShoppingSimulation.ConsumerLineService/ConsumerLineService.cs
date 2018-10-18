@@ -100,7 +100,6 @@ namespace Lazlo.ShoppingSimulation.ConsumerLineService
 
             SmartRequest<PlayerRegisterRequest> req = new SmartRequest<PlayerRegisterRequest>
             {
-                CorrelationRefId = Guid.NewGuid(),
                 CreatedOn = DateTimeOffset.UtcNow,
                 Latitude = 34.072846D,
                 Longitude = -84.190285D,
@@ -118,11 +117,13 @@ namespace Lazlo.ShoppingSimulation.ConsumerLineService
                 Uuid = $"{Guid.NewGuid()}"
             };
 
+            Guid correlationRefId = Guid.NewGuid();
+
             Uri requestUri = GetFullUri("api/v3/player/registration");
             HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
 
             httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
-            httpreq.Headers.Add("lazlo-correlationrefId", req.CorrelationRefId.ToString());
+            httpreq.Headers.Add("lazlo-correlationrefId", correlationRefId.ToString());
 
             string json = JsonConvert.SerializeObject(req);
 
@@ -136,7 +137,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerLineService
             {
                 if (age < 18)
                 {
-                    throw new CorrelationException("Allowed to register a player under 18") { CorrelationRefId = req.CorrelationRefId };
+                    throw new CorrelationException("Allowed to register a player under 18") { CorrelationRefId = correlationRefId };
                 }
 
                 var statusResponse = JsonConvert.DeserializeObject<SmartResponse<ConsumerRegisterResponse>>(responseJson);
