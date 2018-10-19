@@ -18,7 +18,6 @@
 
   <ItemGroup>
     <PackageReference Include="Lazlo.Gaming.Random" Version="1.0.9" />
-    <PackageReference Include="Lazlo.Shopping.Common" Version="1.0.16" />
     <PackageReference Include="Microsoft.ServiceFabric.Services" Version="3.2.187" />
   </ItemGroup>
 

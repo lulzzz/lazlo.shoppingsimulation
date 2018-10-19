@@ -44,6 +44,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         const string WorkflowReminderKey = "WorkflowReminderKey";
         const string PendingTicketsKey = "PendingTicketsKey";
         const string SecretsKey = "SecretsKey";
+        const string InProgressDownloadsKey = "InProgressDownloadsKey";
 
         const bool _UseLocalHost = false;
         string _UriBase = "devshopapi.services.32point6.com";
@@ -51,6 +52,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         protected HttpClient _HttpClient = new HttpClient();
 
         static readonly Uri PosDeviceServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/PosDeviceSimulationActorService");
+        static readonly Uri EntityDownloadServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/ConsumerEntityDownloadActorService");
 
         //readonly string AuthorityLicenseCode = "0rsVpol+brlnpe@m@?K1y?WA$Cw?v*hbE[hv(5u*A5zr3s$>nsgIQVchetwG&C++$-l7&l6#vD(P%1RZCGpc^petQnH7{{3Z(n0WN#lZ]cK6yof!*2LdzsLZ?Zr+lo5J+Hrz[NKs5ZGzjYO4cCX4=zUs:227ixF";
         //readonly string SimulationLicenseCode = "0sywVlnRzumnD]{q^}X6v[gciix6J9xjVydm0iYNlpkr:fLTS(AwHV(ydQMBJ#xpe3/TKP1K@+u@Ou@r?#yOYy*8+BK(NeS{AL)]Wj5*0G8)(Osn[}m-8]2o&Fv]N=HJffMp!}euLYdFXwbl!AX:LxPHSi5hbuL";
@@ -163,16 +165,25 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             {
                 var statusResponse = JsonConvert.DeserializeObject<SmartResponse<CheckoutStatusResponse>>(responseJson);
 
-                if(statusResponse.Data.TicketStatuses.All(z => z.GeneratedOn.HasValue))
+                List<Guid> inProgressDownloads = await StateManager.GetOrAddStateAsync(InProgressDownloadsKey, new List<Guid>());
+
+                foreach(var item in statusResponse.Data.TicketStatuses)
                 {
-                    await StateManager.SetStateAsync(PendingTicketsKey, statusResponse.Data.TicketStatuses);
-                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.DownloadTickets);
+                    if(!inProgressDownloads.Contains(item.TicketRefId) && item.GeneratedOn != null)
+                    {
+                        ActorId downloadActorId = new ActorId(item.TicketRefId);
+
+                        IConsumerEntityDownloadActor downloadActor = ActorProxy.Create<IConsumerEntityDownloadActor>(downloadActorId, EntityDownloadServiceUri);
+
+                        await downloadActor.InitalizeAsync(Id.GetGuidId(), consumerLicenseCode, item);
+
+                        inProgressDownloads.Add(item.TicketRefId);
+
+                        await StateManager.SetStateAsync(InProgressDownloadsKey, inProgressDownloads).ConfigureAwait(false);
+                    }
                 }
 
-                else
-                {
-                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
-                }
+                await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
             }
 
             else
@@ -214,17 +225,20 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
             ChannelDisplay channelDisplay = channelGroups.RandomPick().Channels.RandomPick();
 
-            //channelDisplay = channelGroups
-            //    .SelectMany(z => z.Channels)
-            //    .First(z => z.ChannelName.Contains("100%"));
+            List<ChannelRequest> result = new List<ChannelRequest>();
 
-            ChannelRequest channelRequest = new ChannelRequest
+            foreach (var channelRefId in channelGroups.SelectMany(z => z.Channels).Select(z => z.ChannelRefId))
             {
-                ChannelRefId = channelDisplay.ChannelRefId,
-                ChannelSelections = new List<ChannelSelectionRequest>()
-            };
+                ChannelRequest channelRequest = new ChannelRequest
+                {
+                    ChannelRefId = channelRefId,
+                    ChannelSelections = new List<ChannelSelectionRequest>()
+                };
 
-            return new List<ChannelRequest> { channelRequest };
+                result.Add(channelRequest);
+            }
+                       
+            return result;
         }
 
         private async Task RetrieveChannelGroupAsync()

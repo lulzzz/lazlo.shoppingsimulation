@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -13,17 +13,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Remove="Images\christina.png" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <EmbeddedResource Include="Images\christina.png" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Lazlo.Gaming.Random" Version="1.0.9" />
+    <PackageReference Include="Lazlo.Utility.Cryptography" Version="1.0.0" />
     <PackageReference Include="Microsoft.ServiceFabric.Actors" Version="3.2.187" />
-    <PackageReference Include="Stateless" Version="4.2.1" />
+    <PackageReference Include="ZXing.Net" Version="0.16.4" />
+    <PackageReference Include="ZXing.Net.Bindings.Magick" Version="0.16.6" />
+    <PackageReference Include="ZXing.Net.Bindings.SkiaSharp" Version="0.16.5" />
   </ItemGroup>
 
   <ItemGroup>

@@ -14,10 +14,16 @@
     <Parameter Name="ConsumerExchangeActorService_PartitionCount" DefaultValue="10" />
     <Parameter Name="ConsumerExchangeActorService_MinReplicaSetSize" DefaultValue="3" />
     <Parameter Name="ConsumerExchangeActorService_TargetReplicaSetSize" DefaultValue="3" />
+    <Parameter Name="ConsumerEntityDownloadActorService_PartitionCount" DefaultValue="10" />
+    <Parameter Name="ConsumerEntityDownloadActorService_MinReplicaSetSize" DefaultValue="3" />
+    <Parameter Name="ConsumerEntityDownloadActorService_TargetReplicaSetSize" DefaultValue="3" />
   </Parameters>
   <!-- Import the ServiceManifest from the ServicePackage. The ServiceManifestName and ServiceManifestVersion 
        should match the Name and Version attributes of the ServiceManifest element defined in the 
        ServiceManifest.xml file. -->
+  <ServiceManifestImport>
+    <ServiceManifestRef ServiceManifestName="Lazlo.ShoppingSimulation.ConsumerEntityDownloadActorPkg" ServiceManifestVersion="1.0.0" />
+  </ServiceManifestImport>
   <ServiceManifestImport>
     <ServiceManifestRef ServiceManifestName="Lazlo.ShoppingSimulation.ConsumerExchangeActorPkg" ServiceManifestVersion="1.0.0" />
     <ConfigOverrides />
@@ -65,6 +71,11 @@
     <Service Name="ConsumerExchangeActorService" GeneratedIdRef="24fb0d64-491f-4d8d-868c-a4937e6d39d1|Persisted">
       <StatefulService ServiceTypeName="ConsumerExchangeActorServiceType" TargetReplicaSetSize="[ConsumerExchangeActorService_TargetReplicaSetSize]" MinReplicaSetSize="[ConsumerExchangeActorService_MinReplicaSetSize]">
         <UniformInt64Partition PartitionCount="[ConsumerExchangeActorService_PartitionCount]" LowKey="-9223372036854775808" HighKey="9223372036854775807" />
+      </StatefulService>
+    </Service>
+    <Service Name="ConsumerEntityDownloadActorService" GeneratedIdRef="f847d67a-648a-457a-b46f-adb0b6216eca|Persisted">
+      <StatefulService ServiceTypeName="ConsumerEntityDownloadActorServiceType" TargetReplicaSetSize="[ConsumerEntityDownloadActorService_TargetReplicaSetSize]" MinReplicaSetSize="[ConsumerEntityDownloadActorService_MinReplicaSetSize]">
+        <UniformInt64Partition PartitionCount="[ConsumerEntityDownloadActorService_PartitionCount]" LowKey="-9223372036854775808" HighKey="9223372036854775807" />
       </StatefulService>
     </Service>
   </DefaultServices>

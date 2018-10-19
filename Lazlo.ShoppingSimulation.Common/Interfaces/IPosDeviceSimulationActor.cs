@@ -16,5 +16,7 @@ namespace Lazlo.ShoppingSimulation.Common.Interfaces
         Task InitializeAsync(string licenseCode, List<ApiLicenseDisplay> ApplicationLicenses, PosDeviceModes posDeviceModes);
 
         Task<string> ConsumerScansPos();
+
+        Task ConsumerLeavesPos();
     }
 }

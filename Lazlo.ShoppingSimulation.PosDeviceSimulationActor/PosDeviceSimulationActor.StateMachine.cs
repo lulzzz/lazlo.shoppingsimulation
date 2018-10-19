@@ -64,6 +64,9 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             _Machine.Configure(PosDeviceSimulationStateType.CallingCheckoutComplete)
                 .OnEntryAsync(async () => await CallCheckoutCompleteAsync())
                 .Permit(PosDeviceSimulationTriggerType.WaitForConsumerToPay, PosDeviceSimulationStateType.WaitingForConsumerToPay) //Loopback
+                .Permit(PosDeviceSimulationTriggerType.WaitForConsumerToLeave, PosDeviceSimulationStateType.WaitingForConsumerToLeave);
+
+            _Machine.Configure(PosDeviceSimulationStateType.WaitingForConsumerToLeave)
                 .Permit(PosDeviceSimulationTriggerType.GoIdle, PosDeviceSimulationStateType.Idle);
         }
 
@@ -123,50 +126,34 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
     public enum PosDeviceSimulationTriggerType
     {
         // reserved
-        CreateActor = 0,
-        InitializeActor = 1,
-        GoIdle = 2,
-        GetNextInLine = 4,
-        CallCheckoutCompletePending = 64,
-        WaitForConsumerToCheckout = 128,
-        WaitForConsumerToPresentQr = 256,
-        WaitForConsumerToPay = 512,
-        ScanConsumerQr = 1024,
-        AcceptPayment = 2048,
-        //CallCheckoutCompletePending = 8,
-        //QueueCheckoutPending = 16
-        //Registering = 16,
-        //Registered = 32,
-        //TxStart = 64,
-        //TxRelease = 128, // idempotent
-        //TxProcess = 512, // hand to ConsumerActor
-        //TxEnded = 1024, // Actor reports back I'm done
+        CreateActor,
+        InitializeActor,
+        GoIdle,
+        GetNextInLine,
+        CallCheckoutCompletePending,
+        WaitForConsumerToCheckout,
+        WaitForConsumerToPresentQr,
+        WaitForConsumerToPay,
+        WaitForConsumerToLeave,
+        ScanConsumerQr,
+        AcceptPayment,
+        ConsumerLeftLine
     }
 
-    [Flags]
     public enum PosDeviceSimulationStateType
     {
-        None = 0,
-        ActorCreated = 1,
-        ActorInitializing = 2,
-        Idle = 4,
-        NextInLine = 8,
-        CallingCheckoutCompletePending = 16,
-        WaitingForConsumerToCheckout = 32,
-        WaitingForConsumerToPresentQr = 64,
-        ScanningConsumerQr = 128,
-        WaitingForConsumerToPay = 256,
-        CallingCheckoutComplete = 512,
-        //WaitingForConsumer = 16,
-        //CheckoutPendingQueued = 32,
-        //ProcessingCheckoutPending = 64,
-        //Registering = 16,
-        //Registered = 32,
-        //TxStarted = 64,
-        //TxReleasing = 128, // idempotent
-        //TxReleased = 256, // succeeeded in calling checkoutcomplete
-        //TxProcessing = 512, // hand to ConsumerActor
-        //TxEnded = 1024, // Actor reports back I'm done
-        DeadManWalking = 8196
+        None,
+        ActorCreated,
+        ActorInitializing,
+        Idle,
+        NextInLine,
+        CallingCheckoutCompletePending,
+        WaitingForConsumerToCheckout,
+        WaitingForConsumerToPresentQr,
+        ScanningConsumerQr,
+        WaitingForConsumerToPay,
+        CallingCheckoutComplete,
+        WaitingForConsumerToLeave,
+        DeadManWalking
     }
 }

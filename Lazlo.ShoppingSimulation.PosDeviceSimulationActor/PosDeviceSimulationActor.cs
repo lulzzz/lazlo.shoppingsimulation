@@ -453,7 +453,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
 
                 if (message.IsSuccessStatusCode)
                 {
-                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.GoIdle);
+                    await _Machine.FireAsync(PosDeviceSimulationTriggerType.WaitForConsumerToLeave);
                 }
 
                 else
@@ -512,6 +512,11 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
             string checkoutLicenseCode = await StateManager.GetStateAsync<string>(CheckoutLicenseCodeKey).ConfigureAwait(false);
 
             return checkoutLicenseCode;
+        }
+
+        public async Task ConsumerLeavesPos()
+        {
+            await _Machine.FireAsync(PosDeviceSimulationTriggerType.ConsumerLeftLine);
         }
     }
 }

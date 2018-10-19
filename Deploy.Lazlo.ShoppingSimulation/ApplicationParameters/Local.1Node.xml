@@ -14,5 +14,8 @@
     <Parameter Name="ConsumerExchangeActorService_PartitionCount" Value="1" />
     <Parameter Name="ConsumerExchangeActorService_TargetReplicaSetSize" Value="1" />
     <Parameter Name="ConsumerExchangeActorService_MinReplicaSetSize" Value="1" />
+    <Parameter Name="ConsumerEntityDownloadActorService_PartitionCount" Value="1" />
+    <Parameter Name="ConsumerEntityDownloadActorService_TargetReplicaSetSize" Value="1" />
+    <Parameter Name="ConsumerEntityDownloadActorService_MinReplicaSetSize" Value="1" />
   </Parameters>
 </Application>

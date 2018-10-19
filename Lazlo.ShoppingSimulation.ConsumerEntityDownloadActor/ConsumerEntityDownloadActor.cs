@@ -1,4 +1,13 @@
-﻿using Lazlo.Common.Models;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.ServiceFabric.Actors;
+using Microsoft.ServiceFabric.Actors.Runtime;
+using Microsoft.ServiceFabric.Actors.Client;
+using Lazlo.ShoppingSimulation.Common.Interfaces;
+using Lazlo.Common.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -13,53 +22,70 @@ using Lazlo.Utility;
 using ImageMagick;
 using System.Diagnostics;
 
-namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
+namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
 {
-    public partial class ConsumerSimulationActor
+    /// <remarks>
+    /// This class represents an actor.
+    /// Every ActorID maps to an instance of this class.
+    /// The StatePersistence attribute determines persistence and replication of actor state:
+    ///  - Persisted: State is written to disk and replicated.
+    ///  - Volatile: State is kept in memory only and replicated.
+    ///  - None: State is kept in memory only and not replicated.
+    /// </remarks>
+    [StatePersistence(StatePersistence.Persisted)]
+    internal class ConsumerEntityDownloadActor : Actor, IConsumerEntityDownloadActor, IRemindable
     {
-        private async Task DownloadNextTicket()
+        const string ConsumerRefIdKey = "ConsumerRefIdKey";
+        const string ConsumerLicenseCodeKey = "ConsumerLicenseCodeKey";
+        const string TicketStatusDisplayKey = "TicketStatusDisplayKey";
+        const string ReminderKey = "ReminderKey";
+        
+        /// <summary>
+        /// Initializes a new instance of ConsumerEntityDownloadActor
+        /// </summary>
+        /// <param name="actorService">The Microsoft.ServiceFabric.Actors.Runtime.ActorService that will host this actor instance.</param>
+        /// <param name="actorId">The Microsoft.ServiceFabric.Actors.ActorId for this actor instance.</param>
+        public ConsumerEntityDownloadActor(ActorService actorService, ActorId actorId)
+            : base(actorService, actorId)
+        {
+
+        }
+
+        public async Task InitalizeAsync(Guid consumerRefId, string consumerLicenseCode, TicketStatusDisplay ticketStatusDisplay)
+        {
+            if(!await StateManager.ContainsStateAsync(ConsumerRefIdKey))
+            {
+                await StateManager.SetStateAsync(ConsumerRefIdKey, consumerRefId);
+                await StateManager.SetStateAsync(ConsumerLicenseCodeKey, consumerRefId);
+                await StateManager.SetStateAsync(TicketStatusDisplayKey, ticketStatusDisplay);
+            }
+
+            await RegisterReminderAsync(ReminderKey, null, TimeSpan.FromMilliseconds(1), TimeSpan.FromSeconds(5));
+        }
+
+        public async Task ReceiveReminderAsync(string reminderName, byte[] state, TimeSpan dueTime, TimeSpan period)
         {
             try
             {
-                var pendingTickets = await StateManager.GetStateAsync<List<TicketStatusDisplay>>(PendingTicketsKey);
+                EntitySecret entitySecret = await RetrieveEntityMediaAsync().ConfigureAwait(false);
 
-                TicketStatusDisplay ticket = pendingTickets.First();
+                WriteTimedDebug($"Ticket download: {entitySecret.EntityRefId}");
 
-                EntitySecret entitySecret = await RetrieveEntityMediaAsync(ticket);
+                var reminder = GetReminder(ReminderKey);
 
-                if(entitySecret != null)
-                {
-                    var secrets = await StateManager.GetOrAddStateAsync(SecretsKey, new List<EntitySecret>());
-
-                    secrets.Add(entitySecret);
-
-                    await StateManager.SetStateAsync(SecretsKey, secrets);
-                }
-
-                pendingTickets.Remove(ticket);
-
-                await StateManager.SetStateAsync(PendingTicketsKey, pendingTickets);
-
-                if(pendingTickets.Count == 0)
-                {
-                    Debugger.Break();
-                }
-
-                else
-                {
-                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.DownloadTickets);
-                }
+                await UnregisterReminderAsync(reminder).ConfigureAwait(false);
             }
 
             catch (Exception ex)
             {
                 WriteTimedDebug(ex);
-                await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.DownloadTickets);
             }
         }
 
-        private async Task<EntitySecret> RetrieveEntityMediaAsync(TicketStatusDisplay ticket)
+        private async Task<EntitySecret> RetrieveEntityMediaAsync()
         {
+            TicketStatusDisplay ticket = await StateManager.GetStateAsync<TicketStatusDisplay>(TicketStatusDisplayKey);
+
             WriteTimedDebug($"Begin retrieve ticket media. {ticket.TicketTemplateType} {ticket.TicketRefId} {ticket.MediaSize}\n{ticket.SasUri}");
 
             int chunkSize = ticket.MediaSize / 100;
@@ -192,6 +218,16 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             var target = exifProfile?.Values?.FirstOrDefault(z => z.Tag == ExifTag.ImageUniqueID);
 
             return Task.FromResult((string)target?.Value);
+        }
+
+        private void WriteTimedDebug(string message)
+        {
+            Debug.WriteLine($"{DateTimeOffset.Now}: {message}");
+        }
+
+        private void WriteTimedDebug(Exception ex)
+        {
+            Debug.WriteLine($"{DateTimeOffset.Now}: {ex}");
         }
     }
 }
