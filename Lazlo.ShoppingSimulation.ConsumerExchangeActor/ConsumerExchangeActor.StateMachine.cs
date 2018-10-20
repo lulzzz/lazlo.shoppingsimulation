@@ -13,7 +13,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
 
         private StateMachine<ConsumerSimulationExchangeState, ConsumerSimulationExchangeAction> _StateMachine;
 
-        private StateMachine<ConsumerSimulationExchangeState, ConsumerSimulationExchangeAction>.TriggerWithParameters<string, List<EntitySecret>> _InitializeTrigger;
+        private StateMachine<ConsumerSimulationExchangeState, ConsumerSimulationExchangeAction>.TriggerWithParameters<string, string, List<EntitySecret>> _InitializeTrigger;
 
         private void ConfigureStateMachine()
         {
@@ -21,18 +21,24 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
                 () => StateManager.GetOrAddStateAsync(StateKey, ConsumerSimulationExchangeState.None).Result,
                 async (state) => await StateManager.SetStateAsync(StateKey, state));
 
+            _InitializeTrigger = _StateMachine.SetTriggerParameters<string, string, List<EntitySecret>>(ConsumerSimulationExchangeAction.InitializeActor);
+
             _StateMachine.Configure(ConsumerSimulationExchangeState.None)
-                .Permit(ConsumerSimulationExchangeAction.CreateActor, ConsumerSimulationExchangeState.ActorInitializing);
+                .Permit(ConsumerSimulationExchangeAction.CreateActor, ConsumerSimulationExchangeState.ActorCreated);
+
+            _StateMachine.Configure(ConsumerSimulationExchangeState.ActorCreated)
+                .Permit(ConsumerSimulationExchangeAction.InitializeActor, ConsumerSimulationExchangeState.ActorInitializing);
 
             _StateMachine.Configure(ConsumerSimulationExchangeState.ActorInitializing)
-                .OnEntryFromAsync(_InitializeTrigger, async (a, b) => await OnInitialized(a, b))
+                .OnEntryFromAsync(_InitializeTrigger, async (a, b, c) => await OnInitialized(a, b, c))
                 .Permit(ConsumerSimulationExchangeAction.GoIdle, ConsumerSimulationExchangeState.Idle);
 
             _StateMachine.Configure(ConsumerSimulationExchangeState.Idle)
                 .Permit(ConsumerSimulationExchangeAction.Validate, ConsumerSimulationExchangeState.Validating);
 
             _StateMachine.Configure(ConsumerSimulationExchangeState.Validating)
-                .OnEntryAsync(async () => await ValidateAsync());
+                .OnEntryAsync(async () => await ValidateAsync())
+                .Permit(ConsumerSimulationExchangeAction.GoIdle, ConsumerSimulationExchangeState.Idle);
         }
 
         private async Task ProcessWorkflowAsync()
@@ -68,7 +74,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
     public enum ConsumerSimulationExchangeAction
     {
         CreateActor,
-        InitialiazeActor,
+        InitializeActor,
         GoIdle,
         Validate
     }

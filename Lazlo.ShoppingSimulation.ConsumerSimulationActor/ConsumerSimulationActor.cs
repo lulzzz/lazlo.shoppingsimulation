@@ -50,6 +50,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
         protected HttpClient _HttpClient = new HttpClient();
 
+        static readonly Uri ExchangeServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/ConsumerExchangeActorService");
         static readonly Uri PosDeviceServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/PosDeviceSimulationActorService");
         static readonly Uri EntityDownloadServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/ConsumerEntityDownloadActorService");
         static readonly Uri LineServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/Lazlo.ShoppingSimulation.ConsumerLineService");
@@ -191,6 +192,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
                     await posActor.ConsumerLeavesPos();
 
+                    await InitializeExchangeActor(appApiLicenseCode, consumerLicenseCode, inProgressDownloads).ConfigureAwait(false);
+
                     await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.MoveToTheBackOfTheLine);
                 }
 
@@ -203,6 +206,24 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             else
             {
                 await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
+            }
+        }
+
+        private async Task InitializeExchangeActor(string appApiLicenseCode, string consumerLicenseCode, List<EntitySecret> secrets)
+        {
+            try
+            {
+                ActorId exchangeActorId = new ActorId(Guid.NewGuid());
+
+                IConsumerExchangeActor exchangeActor = ActorProxy.Create<IConsumerExchangeActor>(exchangeActorId, ExchangeServiceUri);
+
+                await exchangeActor.InitializeAsync(appApiLicenseCode, consumerLicenseCode, secrets).ConfigureAwait(false);
+            }
+
+            catch (Exception ex)
+            {
+                WriteTimedDebug(ex);
+                // Better luck next time
             }
         }
 

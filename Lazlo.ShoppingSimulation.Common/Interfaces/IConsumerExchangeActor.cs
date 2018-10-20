@@ -8,6 +8,6 @@ namespace Lazlo.ShoppingSimulation.Common.Interfaces
 {
     public interface IConsumerExchangeActor : IActor
     {
-        Task InitializeAsync(string consumerLicenseCode, List<EntitySecret> entities);
+        Task InitializeAsync(string appApiLicenseCode, string consumerLicenseCode, List<EntitySecret> entities);
     }
 }

@@ -12,6 +12,7 @@ using Lazlo.Common.Models;
 using Newtonsoft.Json;
 using Lazlo.Common.Responses;
 using Lazlo.ShoppingSimulation.Common;
+using System.Diagnostics;
 
 namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
 {
@@ -29,6 +30,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
         const bool _UseLocalHost = false;
         string _UriBase = "devshopapi.services.32point6.com";
 
+        const string AppApiLicenseCodeKey = "AppApiLicenseCodeKey";
         const string ConsumerLicenseCodeKey = "ConsumerLicenseCodeKey";
         const string EntitiesKey = "EntitiesKey";
 
@@ -44,28 +46,39 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
         public ConsumerExchangeActor(ActorService actorService, ActorId actorId)
             : base(actorService, actorId)
         {
+
         }
 
-        /// <summary>
-        /// This method is called whenever an actor is activated.
-        /// An actor is activated the first time any of its methods are invoked.
-        /// </summary>
-        protected override Task OnActivateAsync()
+        protected override async Task OnActivateAsync()
         {
-            ActorEventSource.Current.ActorMessage(this, "Actor activated.");
+            try
+            {
+                ConfigureStateMachine();
 
-            return Task.CompletedTask;
+                if (_StateMachine.State == ConsumerSimulationExchangeState.None)
+                {
+                    await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.CreateActor);
+                }
+            }
+
+            catch (Exception ex)
+            {
+                WriteTimedDebug(ex);
+                throw;
+            }
         }
 
-        private async Task<List<MerchantDisplay>> RetrieveMerchandiseAsync(Guid checkoutCorrelationRefId)
+        private async Task<List<MerchantDisplay>> RetrieveMerchandiseAsync()
         {
             Uri requestUri = GetFullUri("api/v1/claim/ticket/exchange/merchandise");
 
             HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Get, requestUri);
 
-            //httpreq.Headers.Add("Lazlo-SimulationLicenseCode", SimulationLicenseCode);
-            //httpreq.Headers.Add("Lazlo-AuthorityLicenseCode", AuthorityLicenseCode);
-            httpreq.Headers.Add("Lazlo-CorrelationRefId", checkoutCorrelationRefId.ToString());
+            string appApiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
+            string consumerLicenseCode = await StateManager.GetStateAsync<string>(ConsumerLicenseCodeKey).ConfigureAwait(false);
+
+            httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
+            httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
 
             HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
 
@@ -82,7 +95,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
             {
                 string error = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-                throw new CorrelationException($"(Simulator Workflow) Player - Retrieve Merchandise Failed: {message.StatusCode} {error}") { CorrelationRefId = checkoutCorrelationRefId };
+                throw new Exception($"Error retrieving merchandise: {error}");
             }
         }
 
@@ -99,24 +112,52 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
             }
         }
 
-        public async Task InitializeAsync(string consumerLicenseCode, List<EntitySecret> entities)
+        public async Task InitializeAsync(string appApiLicenseCodeKey, string consumerLicenseCode, List<EntitySecret> entities)
         {
-            await _StateMachine.FireAsync(_InitializeTrigger, consumerLicenseCode, entities);
+            await _StateMachine.FireAsync(_InitializeTrigger, appApiLicenseCodeKey, consumerLicenseCode, entities);
         }
 
-        private async Task OnInitialized(string consumerLicenseCode, List<EntitySecret> entities)
+        private async Task OnInitialized(string appApiLicenseCodeKey, string consumerLicenseCode, List<EntitySecret> entities)
         {
-            await RegisterReminderAsync(WorkflowReminderKey, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            await RegisterReminderAsync(WorkflowReminderKey, null, TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(5)).ConfigureAwait(false);
 
+            await StateManager.SetStateAsync(AppApiLicenseCodeKey, appApiLicenseCodeKey);
             await StateManager.SetStateAsync(ConsumerLicenseCodeKey, consumerLicenseCode);
             await StateManager.SetStateAsync(EntitiesKey, entities);
 
             await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.GoIdle);
+
+            WriteTimedDebug("Exchange Actor Initialized");
         }
 
         private async Task ValidateAsync()
         {
-            
+            try
+            {
+                //temp test, call validate first
+                var merchandise = await RetrieveMerchandiseAsync();
+
+                Debug.WriteLine($"Merchandise count: {merchandise.Count}");
+
+                await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.GoIdle);
+            }
+
+            catch (Exception ex)
+            {
+                WriteTimedDebug(ex);
+
+                await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.GoIdle);
+            }
+        }
+
+        private void WriteTimedDebug(string message)
+        {
+            Debug.WriteLine($"{DateTimeOffset.Now}: {message}");
+        }
+
+        private void WriteTimedDebug(Exception ex)
+        {
+            Debug.WriteLine($"{DateTimeOffset.Now}: {ex}");
         }
     }
 }
