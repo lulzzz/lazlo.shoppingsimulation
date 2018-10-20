@@ -52,16 +52,23 @@ namespace Lazlo.ShoppingSimulation.ConsumerLineService
             return this.CreateServiceRemotingReplicaListeners();
         }
 
-        public Task GetInLineAsync(Guid consumerActorId)
+        public async Task GetInLineAsync(string appApiLicenseCode, Guid consumerActorId)
         {
-            throw new NotImplementedException();
+            IReliableQueue<Guid> queue = await StateManager.GetOrAddAsync<IReliableQueue<Guid>>(appApiLicenseCode).ConfigureAwait(false);
+
+            using (ITransaction tx = StateManager.CreateTransaction())
+            {
+                await queue.EnqueueAsync(tx, consumerActorId).ConfigureAwait(false);
+
+                await tx.CommitAsync();
+            }
         }
 
         public async Task<Guid> GetNextConsumerInLineAsync(string appApiLicenseCode)
         {
             try
             {
-                IReliableQueue<Guid> queue = await StateManager.GetOrAddAsync<IReliableQueue<Guid>>(ConsumerQueueName).ConfigureAwait(false);
+                IReliableQueue<Guid> queue = await StateManager.GetOrAddAsync<IReliableQueue<Guid>>(appApiLicenseCode).ConfigureAwait(false);
 
                 using (ITransaction tx = StateManager.CreateTransaction())
                 {

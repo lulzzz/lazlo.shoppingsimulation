@@ -69,14 +69,19 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             _StateMachine.Configure(ConsumerSimulationStateType.CheckingTicketStatus)
                 .OnEntryAsync(async () => await RetrieveCheckoutStatus())
                 .Permit(ConsumerSimulationWorkflowActions.WaitForTicketsToRender, ConsumerSimulationStateType.WaitingForTicketsToRender)
-                .Permit(ConsumerSimulationWorkflowActions.DownloadTickets, ConsumerSimulationStateType.DownloadingTickets);
+                .Permit(ConsumerSimulationWorkflowActions.MoveToTheBackOfTheLine, ConsumerSimulationStateType.MovingToTheBackOfTheLine);
 
-            _StateMachine.Configure(ConsumerSimulationStateType.DownloadingTickets)
-                .Permit(ConsumerSimulationWorkflowActions.DownloadTicket, ConsumerSimulationStateType.DownloadingTicket);
+            //_StateMachine.Configure(ConsumerSimulationStateType.DownloadingTickets)
+            //    .Permit(ConsumerSimulationWorkflowActions.DownloadTicket, ConsumerSimulationStateType.DownloadingTicket);
 
-            _StateMachine.Configure(ConsumerSimulationStateType.DownloadingTicket)
-                .OnEntryAsync(async () => await DownloadNextTicket())
-                .Permit(ConsumerSimulationWorkflowActions.DownloadTickets, ConsumerSimulationStateType.DownloadingTickets);
+            //_StateMachine.Configure(ConsumerSimulationStateType.DownloadingTicket)
+            //    .OnEntryAsync(async () => await DownloadNextTicket())
+            //    .Permit(ConsumerSimulationWorkflowActions.DownloadTickets, ConsumerSimulationStateType.DownloadingTickets);
+
+            _StateMachine.Configure(ConsumerSimulationStateType.MovingToTheBackOfTheLine)
+                .OnEntryAsync(async () => await MoveToTheBackOfTheLine())
+                .Permit(ConsumerSimulationWorkflowActions.WaitForTicketsToRender, ConsumerSimulationStateType.WaitingForTicketsToRender)
+                .Permit(ConsumerSimulationWorkflowActions.GetInLine, ConsumerSimulationStateType.WaitingInLine);
         }
 
         public async Task ProcessWorkflow()
@@ -147,7 +152,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 		WaitForTicketsToRender,
         CheckTicketStatus,
         DownloadTickets,
-        DownloadTicket
+        DownloadTicket,
+        MoveToTheBackOfTheLine
     }
 
     [Flags]
@@ -165,6 +171,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 		CheckingTicketStatus = 256,
         DownloadingTickets = 512,
         DownloadingTicket = 1024,
+        MovingToTheBackOfTheLine = 2048,
         DeadManWalking = 8196
     }
 }

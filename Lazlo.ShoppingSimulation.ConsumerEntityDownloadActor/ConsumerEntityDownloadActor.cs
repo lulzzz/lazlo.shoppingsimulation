@@ -39,7 +39,9 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
         const string ConsumerLicenseCodeKey = "ConsumerLicenseCodeKey";
         const string TicketStatusDisplayKey = "TicketStatusDisplayKey";
         const string ReminderKey = "ReminderKey";
-        
+
+        static readonly Uri ConsumerServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/ConsumerSimulationActorService");
+
         /// <summary>
         /// Initializes a new instance of ConsumerEntityDownloadActor
         /// </summary>
@@ -70,6 +72,14 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
                 EntitySecret entitySecret = await RetrieveEntityMediaAsync().ConfigureAwait(false);
 
                 WriteTimedDebug($"Ticket download: {entitySecret.EntityRefId}");
+
+                Guid consumerId = await StateManager.GetStateAsync<Guid>(ConsumerRefIdKey);
+
+                ActorId consumerActorId = new ActorId(consumerId);
+
+                IConsumerSimulationActor consumerActor = ActorProxy.Create<IConsumerSimulationActor>(consumerActorId, ConsumerServiceUri);
+
+                await consumerActor.UpdateDownloadStatusAsync(entitySecret);
 
                 var reminder = GetReminder(ReminderKey);
 

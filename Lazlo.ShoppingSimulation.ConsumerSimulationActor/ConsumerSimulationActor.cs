@@ -18,6 +18,8 @@ using Newtonsoft.Json;
 using Lazlo.Common.Responses;
 using Lazlo.Common.Models;
 using Microsoft.ServiceFabric.Data;
+using Microsoft.ServiceFabric.Services.Client;
+using Microsoft.ServiceFabric.Services.Remoting.Client;
 
 namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 {
@@ -45,6 +47,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         const string PendingTicketsKey = "PendingTicketsKey";
         const string SecretsKey = "SecretsKey";
         const string InProgressDownloadsKey = "InProgressDownloadsKey";
+        const string TotalPurchasesKey = "TotalPurchasesKey";
 
         const bool _UseLocalHost = false;
         string _UriBase = "devshopapi.services.32point6.com";
@@ -53,6 +56,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
         static readonly Uri PosDeviceServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/PosDeviceSimulationActorService");
         static readonly Uri EntityDownloadServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/ConsumerEntityDownloadActorService");
+        static readonly Uri LineServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/Lazlo.ShoppingSimulation.ConsumerLineService");
 
         //readonly string AuthorityLicenseCode = "0rsVpol+brlnpe@m@?K1y?WA$Cw?v*hbE[hv(5u*A5zr3s$>nsgIQVchetwG&C++$-l7&l6#vD(P%1RZCGpc^petQnH7{{3Z(n0WN#lZ]cK6yof!*2LdzsLZ?Zr+lo5J+Hrz[NKs5ZGzjYO4cCX4=zUs:227ixF";
         //readonly string SimulationLicenseCode = "0sywVlnRzumnD]{q^}X6v[gciix6J9xjVydm0iYNlpkr:fLTS(AwHV(ydQMBJ#xpe3/TKP1K@+u@Ou@r?#yOYy*8+BK(NeS{AL)]Wj5*0G8)(Osn[}m-8]2o&Fv]N=HJffMp!}euLYdFXwbl!AX:LxPHSi5hbuL";
@@ -141,20 +145,18 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             }
         }
 
-
-
         public async Task RetrieveCheckoutStatus()
         {
             Uri requestUri = GetFullUri("api/v2/shopping/checkout/status");
 
             HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Get, requestUri);
 
-            string appAPiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
+            string appApiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
             string consumerLicenseCode = await StateManager.GetStateAsync<string>(ConsumerLicenseCodeKey).ConfigureAwait(false);
             string checkoutSessionLicenseCode = await StateManager.GetStateAsync<string>(ActionLicenseCodeKey).ConfigureAwait(false);
 
             httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
-            httpreq.Headers.Add("lazlo-apilicensecode", appAPiLicenseCode);
+            httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
             httpreq.Headers.Add("lazlo-txlicensecode", checkoutSessionLicenseCode);
 
             var message = await _HttpClient.SendAsync(httpreq);
@@ -165,11 +167,11 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             {
                 var statusResponse = JsonConvert.DeserializeObject<SmartResponse<CheckoutStatusResponse>>(responseJson);
 
-                List<Guid> inProgressDownloads = await StateManager.GetOrAddStateAsync(InProgressDownloadsKey, new List<Guid>());
+                List<EntitySecret> inProgressDownloads = await StateManager.GetOrAddStateAsync(InProgressDownloadsKey, new List<EntitySecret>());
 
                 foreach(var item in statusResponse.Data.TicketStatuses)
                 {
-                    if(!inProgressDownloads.Contains(item.TicketRefId) && item.GeneratedOn != null)
+                    if(!inProgressDownloads.Any(z => z.EntityRefId == item.TicketRefId) && item.GeneratedOn != null)
                     {
                         ActorId downloadActorId = new ActorId(item.TicketRefId);
 
@@ -177,17 +179,68 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
                         await downloadActor.InitalizeAsync(Id.GetGuidId(), consumerLicenseCode, item);
 
-                        inProgressDownloads.Add(item.TicketRefId);
+                        inProgressDownloads.Add(new EntitySecret { EntityRefId = item.TicketRefId });
 
                         await StateManager.SetStateAsync(InProgressDownloadsKey, inProgressDownloads).ConfigureAwait(false);
                     }
                 }
 
-                await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
+                if(inProgressDownloads.All(z => z.LicenseCode != null) && inProgressDownloads.Count == statusResponse.Data.TicketStatusCount)
+                {
+                    Guid posId = await StateManager.GetStateAsync<Guid>(PosDeviceActorIdKey);
+
+                    ActorId posActorId = new ActorId(posId);
+
+                    IPosDeviceSimulationActor posActor = ActorProxy.Create<IPosDeviceSimulationActor>(posActorId, PosDeviceServiceUri);
+
+                    await posActor.ConsumerLeavesPos();
+
+                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.MoveToTheBackOfTheLine);
+                }
+
+                else
+                {
+                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
+                }
             }
 
             else
             {
+                await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
+            }
+        }
+
+        private async Task MoveToTheBackOfTheLine()
+        {
+            try
+            {
+
+
+                int txCount = await StateManager.AddOrUpdateStateAsync(TotalPurchasesKey, 0, (x, y) =>
+                {
+                    Debug.WriteLine(x);
+                    return y + 1;
+                });
+
+                string appApiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
+
+                Random random = new Random();
+
+                int partitionIndex = random.Next(0, 4);
+
+                ServicePartitionKey servicePartitionKey = new ServicePartitionKey(partitionIndex);
+
+                ILineService proxy = ServiceProxy.Create<ILineService>(LineServiceUri, servicePartitionKey);
+
+                await proxy.GetInLineAsync(appApiLicenseCode, Id.GetGuidId()).ConfigureAwait(false);
+
+                await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.GetInLine);
+            }
+
+            catch (Exception ex)
+            {
+                WriteTimedDebug(ex);
+
                 await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
             }
         }
@@ -219,11 +272,6 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         private async Task<List<ChannelRequest>> CreateChannelSelections()
         {
             List<ChannelGroupDisplay> channelGroups = await StateManager.GetStateAsync<List<ChannelGroupDisplay>>(ChannelGroupsKey).ConfigureAwait(false);
-            //List<GameDisplay> games = await StateManager.GetStateAsync<List<GameDisplay>>(GamesKey);
-
-            //List<ChannelSelectionRequest> result = new List<ChannelSelectionRequest>();
-
-            ChannelDisplay channelDisplay = channelGroups.RandomPick().Channels.RandomPick();
 
             List<ChannelRequest> result = new List<ChannelRequest>();
 
@@ -237,6 +285,17 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
                 result.Add(channelRequest);
             }
+
+            ChannelDisplay channelDisplay = channelGroups.RandomPick().Channels.RandomPick();
+
+            // Going back to one channel request for now
+            result = new List<ChannelRequest>
+            {
+                new ChannelRequest
+                {
+                    ChannelRefId = channelDisplay.ChannelRefId
+                }
+            };
                        
             return result;
         }
@@ -485,6 +544,19 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
             ConditionalValue<string> actionLicenseCheck = await StateManager.TryGetStateAsync<string>(ActionLicenseCodeKey);
 
             return actionLicenseCheck.HasValue ? actionLicenseCheck.Value : null;
+        }
+
+        public async Task UpdateDownloadStatusAsync(EntitySecret entitySecret)
+        {
+            WriteTimedDebug($"Updating download status: {entitySecret.EntityRefId}");
+
+            List <EntitySecret> inProgressDownloads = await StateManager.GetStateAsync<List<EntitySecret>>(InProgressDownloadsKey);
+
+            inProgressDownloads.RemoveAll(z => z.EntityRefId == entitySecret.EntityRefId);
+
+            inProgressDownloads.Add(entitySecret);
+
+            await StateManager.SetStateAsync(InProgressDownloadsKey, inProgressDownloads).ConfigureAwait(false);            
         }
     }
 }

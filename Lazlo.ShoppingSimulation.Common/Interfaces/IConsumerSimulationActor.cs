@@ -18,5 +18,7 @@ namespace Lazlo.ShoppingSimulation.Common.Interfaces
         Task<string> PosScansConsumer();
 
         Task BeginTransaction(Guid posDeviceActorId, PosDeviceModes posDeviceMode);
+
+        Task UpdateDownloadStatusAsync(EntitySecret entitySecret);
     }
 }

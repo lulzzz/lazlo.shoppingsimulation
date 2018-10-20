@@ -67,7 +67,7 @@ namespace Lazlo.ShoppingSimulation.PosDeviceSimulationActor
                 .Permit(PosDeviceSimulationTriggerType.WaitForConsumerToLeave, PosDeviceSimulationStateType.WaitingForConsumerToLeave);
 
             _Machine.Configure(PosDeviceSimulationStateType.WaitingForConsumerToLeave)
-                .Permit(PosDeviceSimulationTriggerType.GoIdle, PosDeviceSimulationStateType.Idle);
+                .Permit(PosDeviceSimulationTriggerType.ConsumerLeftLine, PosDeviceSimulationStateType.Idle);
         }
 
         private async Task LogTransitionAsync(StateMachine<PosDeviceSimulationStateType, PosDeviceSimulationTriggerType>.Transition arg)

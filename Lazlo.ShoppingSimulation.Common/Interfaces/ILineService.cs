@@ -8,8 +8,8 @@ namespace Lazlo.ShoppingSimulation.Common.Interfaces
 {
     public interface ILineService : IService
     {
-        Task<Guid> GetNextConsumerInLineAsync(string appApiLicenseCode);
+        Task GetInLineAsync(string appApiLicenseCode, Guid consumerActorId);
 
-        Task GetInLineAsync(Guid consumerActorId);
+        Task<Guid> GetNextConsumerInLineAsync(string appApiLicenseCode);
     }
 }
