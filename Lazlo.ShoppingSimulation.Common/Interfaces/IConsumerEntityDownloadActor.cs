@@ -9,6 +9,11 @@ namespace Lazlo.ShoppingSimulation.Common.Interfaces
 {
     public interface IConsumerEntityDownloadActor : IActor
     {
-        Task InitalizeAsync(Guid consumerRefId, string consumerLicenseCode, TicketStatusDisplay ticketStatusDisplay);
+        Task InitalizeAsync(
+            string appApiLicenseCodeKey,
+            string checkoutSessionLicenseCode,
+            Guid consumerRefId,
+            string consumerLicenseCode,
+            TicketStatusDisplay ticketStatusDisplay);
     }
 }

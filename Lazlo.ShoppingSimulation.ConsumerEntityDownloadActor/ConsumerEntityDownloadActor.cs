@@ -21,6 +21,8 @@ using Lazlo.ShoppingSimulation.Common;
 using Lazlo.Utility;
 using ImageMagick;
 using System.Diagnostics;
+using Lazlo.Common.Requests;
+using Newtonsoft.Json;
 
 namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
 {
@@ -35,12 +37,19 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
     [StatePersistence(StatePersistence.Persisted)]
     internal class ConsumerEntityDownloadActor : Actor, IConsumerEntityDownloadActor, IRemindable
     {
+        const bool _UseLocalHost = false;
+        string _UriBase = "devshopapi.services.32point6.com";
+
+        const string AppApiLicenseCodeKey = "AppApiLicenseCodeKey";
+        const string CheckoutSessionLicenseCodeKey = "CheckoutSessionLicenseCodeKey";
         const string ConsumerRefIdKey = "ConsumerRefIdKey";
         const string ConsumerLicenseCodeKey = "ConsumerLicenseCodeKey";
         const string TicketStatusDisplayKey = "TicketStatusDisplayKey";
         const string ReminderKey = "ReminderKey";
 
         static readonly Uri ConsumerServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/ConsumerSimulationActorService");
+
+        protected HttpClient _HttpClient = new HttpClient();
 
         /// <summary>
         /// Initializes a new instance of ConsumerEntityDownloadActor
@@ -53,12 +62,19 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
 
         }
 
-        public async Task InitalizeAsync(Guid consumerRefId, string consumerLicenseCode, TicketStatusDisplay ticketStatusDisplay)
+        public async Task InitalizeAsync(
+            string appApiLicenseCodeKey,
+            string checkoutSessionLicenseCode,
+            Guid consumerRefId,
+            string consumerLicenseCode,
+            TicketStatusDisplay ticketStatusDisplay)
         {
             if(!await StateManager.ContainsStateAsync(ConsumerRefIdKey))
             {
+                await StateManager.SetStateAsync(AppApiLicenseCodeKey, appApiLicenseCodeKey);
+                await StateManager.SetStateAsync(CheckoutSessionLicenseCodeKey, checkoutSessionLicenseCode);
+                await StateManager.SetStateAsync(ConsumerLicenseCodeKey, consumerLicenseCode);
                 await StateManager.SetStateAsync(ConsumerRefIdKey, consumerRefId);
-                await StateManager.SetStateAsync(ConsumerLicenseCodeKey, consumerRefId);
                 await StateManager.SetStateAsync(TicketStatusDisplayKey, ticketStatusDisplay);
             }
 
@@ -72,6 +88,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
                 EntitySecret entitySecret = await RetrieveEntityMediaAsync().ConfigureAwait(false);
 
                 WriteTimedDebug($"Ticket download complete: {entitySecret.ValidationLicenseCode}");
+
+                await CallEntityReceivedAsync(entitySecret);
 
                 Guid consumerId = await StateManager.GetStateAsync<Guid>(ConsumerRefIdKey);
 
@@ -236,6 +254,70 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
         private void WriteTimedDebug(Exception ex)
         {
             Debug.WriteLine($"{DateTimeOffset.Now}: {ex}");
+        }
+
+        private Uri GetFullUri(string fragment)
+        {
+            if (_UseLocalHost)
+            {
+                return new Uri($"http://localhost:8343/{fragment}");
+            }
+
+            else
+            {
+                return new Uri($"http://{_UriBase}/{fragment}");
+            }
+        }
+
+        public async Task CallEntityReceivedAsync(EntitySecret entitySecret)
+        {
+            try
+            {
+                Uri requestUri = GetFullUri("api/v1/shopping/checkout/entity/received");
+
+                HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
+
+                string appApiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
+                string consumerLicenseCode = await StateManager.GetStateAsync<string>(ConsumerLicenseCodeKey).ConfigureAwait(false);
+                string checkoutSessionLicenseCode = await StateManager.GetStateAsync<string>(CheckoutSessionLicenseCodeKey).ConfigureAwait(false);
+
+                httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
+                httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
+                httpreq.Headers.Add("lazlo-txlicensecode", checkoutSessionLicenseCode);
+
+                SmartRequest<EntityReceivedRequest> entityReceivedRequest = new SmartRequest<EntityReceivedRequest>
+                {
+                    Data = new EntityReceivedRequest
+                    {
+                        EntityLicenseCode = entitySecret.ValidationLicenseCode,
+                        MediaHash = entitySecret.Hash
+                    }
+                };
+
+                string json = JsonConvert.SerializeObject(entityReceivedRequest);
+
+                httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+                HttpResponseMessage message = await _HttpClient.SendAsync(httpreq);
+
+                if(message.IsSuccessStatusCode)
+                {
+                    WriteTimedDebug($"EntityReceived success: {entitySecret.ValidationLicenseCode}");
+                }
+
+                else
+                {
+                    string err = await message.Content.ReadAsStringAsync();
+
+                    throw new Exception($"EntityReceived failed: {err}");
+                }
+            }
+
+            catch (Exception ex)
+            {
+                WriteTimedDebug(ex);
+                //Ignore for now
+            }
         }
     }
 }

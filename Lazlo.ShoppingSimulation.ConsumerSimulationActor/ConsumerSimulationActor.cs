@@ -37,7 +37,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         const string PosDeviceActorIdKey = "PosDeviceActorIdKey";
         const string ConsumerLicenseCodeKey = "ConsumerLicenseCodeKey";
         const string AppApiLicenseCodeKey = "AppApiLicenseCodeKey";
-        const string ActionLicenseCodeKey = "ActionLicenseCodeKey";
+        const string CheckoutSessionLicenseCodeKey = "CheckoutSessionLicenseCodeKey";
         const string PosDeviceModeKey = "PosDeviceModeKey";
         const string ChannelGroupsKey = "ChannelGroupsKey";
         const string KillMeReminderKey = "KillMeReminderKey";
@@ -149,7 +149,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
             string appApiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
             string consumerLicenseCode = await StateManager.GetStateAsync<string>(ConsumerLicenseCodeKey).ConfigureAwait(false);
-            string checkoutSessionLicenseCode = await StateManager.GetStateAsync<string>(ActionLicenseCodeKey).ConfigureAwait(false);
+            string checkoutSessionLicenseCode = await StateManager.GetStateAsync<string>(CheckoutSessionLicenseCodeKey).ConfigureAwait(false);
 
             httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
             httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
@@ -167,15 +167,13 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
                 foreach(var item in statusResponse.Data.TicketStatuses)
                 {
-                    WriteTimedDebug($"DANGER!!!: {item.SasUri} {item.ValidationLicenseCode}");
-
                     if(!inProgressDownloads.Any(z => z.ValidationLicenseCode == item.ValidationLicenseCode) && item.GeneratedOn != null)
                     {
                         ActorId downloadActorId = new ActorId(item.ValidationLicenseCode);
 
                         IConsumerEntityDownloadActor downloadActor = ActorProxy.Create<IConsumerEntityDownloadActor>(downloadActorId, EntityDownloadServiceUri);
 
-                        await downloadActor.InitalizeAsync(Id.GetGuidId(), consumerLicenseCode, item);
+                        await downloadActor.InitalizeAsync(appApiLicenseCode, checkoutSessionLicenseCode, Id.GetGuidId(), consumerLicenseCode, item);
 
                         inProgressDownloads.Add(new EntitySecret { ValidationLicenseCode = item.ValidationLicenseCode });
 
@@ -246,7 +244,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         private async Task RemoveTransactionStatesAsync()
         {
             await StateManager.RemoveStateAsync(PosDeviceActorIdKey);
-            await StateManager.RemoveStateAsync(ActionLicenseCodeKey);
+            await StateManager.RemoveStateAsync(CheckoutSessionLicenseCodeKey);
             await StateManager.RemoveStateAsync(PosDeviceModeKey);
             await StateManager.RemoveStateAsync(InProgressDownloadsKey);
         }
@@ -352,7 +350,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
                 string checkoutLicenseCode;
 
-                var existingTransaction = await StateManager.TryGetStateAsync<string>(ActionLicenseCodeKey).ConfigureAwait(false);
+                var existingTransaction = await StateManager.TryGetStateAsync<string>(CheckoutSessionLicenseCodeKey).ConfigureAwait(false);
 
                 if(existingTransaction.HasValue)
                 {
@@ -375,7 +373,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                         checkoutLicenseCode = await RetrieveCheckoutLicenseCode().ConfigureAwait(false);
                     }
 
-                    await StateManager.SetStateAsync(ActionLicenseCodeKey, checkoutLicenseCode).ConfigureAwait(false);
+                    await StateManager.SetStateAsync(CheckoutSessionLicenseCodeKey, checkoutLicenseCode).ConfigureAwait(false);
                     await StateManager.SaveStateAsync().ConfigureAwait(false);
                 }
 
@@ -547,7 +545,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
         public async Task<string> PosScansConsumer()
         {
-            ConditionalValue<string> actionLicenseCheck = await StateManager.TryGetStateAsync<string>(ActionLicenseCodeKey);
+            ConditionalValue<string> actionLicenseCheck = await StateManager.TryGetStateAsync<string>(CheckoutSessionLicenseCodeKey);
 
             return actionLicenseCheck.HasValue ? actionLicenseCheck.Value : null;
         }
