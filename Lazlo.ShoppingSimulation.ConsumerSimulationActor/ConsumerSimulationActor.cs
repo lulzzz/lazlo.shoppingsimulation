@@ -35,17 +35,13 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
     public partial class ConsumerSimulationActor : Actor, IConsumerSimulationActor, IRemindable
     {
         const string PosDeviceActorIdKey = "PosDeviceActorIdKey";
-        const string InitializedKey = "InitializedKey";
         const string ConsumerLicenseCodeKey = "ConsumerLicenseCodeKey";
         const string AppApiLicenseCodeKey = "AppApiLicenseCodeKey";
         const string ActionLicenseCodeKey = "ActionLicenseCodeKey";
         const string PosDeviceModeKey = "PosDeviceModeKey";
-        const string StartupStatusKey = "StartupStatusKey";
         const string ChannelGroupsKey = "ChannelGroupsKey";
         const string KillMeReminderKey = "KillMeReminderKey";
         const string WorkflowReminderKey = "WorkflowReminderKey";
-        const string PendingTicketsKey = "PendingTicketsKey";
-        const string SecretsKey = "SecretsKey";
         const string InProgressDownloadsKey = "InProgressDownloadsKey";
         const string TotalPurchasesKey = "TotalPurchasesKey";
 
@@ -171,21 +167,23 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
                 foreach(var item in statusResponse.Data.TicketStatuses)
                 {
-                    if(!inProgressDownloads.Any(z => z.EntityRefId == item.TicketRefId) && item.GeneratedOn != null)
+                    WriteTimedDebug($"DANGER!!!: {item.SasUri} {item.ValidationLicenseCode}");
+
+                    if(!inProgressDownloads.Any(z => z.ValidationLicenseCode == item.ValidationLicenseCode) && item.GeneratedOn != null)
                     {
-                        ActorId downloadActorId = new ActorId(item.TicketRefId);
+                        ActorId downloadActorId = new ActorId(item.ValidationLicenseCode);
 
                         IConsumerEntityDownloadActor downloadActor = ActorProxy.Create<IConsumerEntityDownloadActor>(downloadActorId, EntityDownloadServiceUri);
 
                         await downloadActor.InitalizeAsync(Id.GetGuidId(), consumerLicenseCode, item);
 
-                        inProgressDownloads.Add(new EntitySecret { EntityRefId = item.TicketRefId });
+                        inProgressDownloads.Add(new EntitySecret { ValidationLicenseCode = item.ValidationLicenseCode });
 
                         await StateManager.SetStateAsync(InProgressDownloadsKey, inProgressDownloads).ConfigureAwait(false);
                     }
                 }
 
-                if(inProgressDownloads.All(z => z.LicenseCode != null) && inProgressDownloads.Count == statusResponse.Data.TicketStatusCount)
+                if(inProgressDownloads.All(z => z.Hash != null) && inProgressDownloads.Count == statusResponse.Data.TicketStatusCount)
                 {
                     Guid posId = await StateManager.GetStateAsync<Guid>(PosDeviceActorIdKey);
 
@@ -214,8 +212,6 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
         {
             try
             {
-
-
                 int txCount = await StateManager.AddOrUpdateStateAsync(TotalPurchasesKey, 0, (x, y) =>
                 {
                     Debug.WriteLine(x);
@@ -234,6 +230,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
                 await proxy.GetInLineAsync(appApiLicenseCode, Id.GetGuidId()).ConfigureAwait(false);
 
+                await RemoveTransactionStatesAsync();
+
                 await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.GetInLine);
             }
 
@@ -243,6 +241,14 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
                 await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.WaitForTicketsToRender);
             }
+        }
+
+        private async Task RemoveTransactionStatesAsync()
+        {
+            await StateManager.RemoveStateAsync(PosDeviceActorIdKey);
+            await StateManager.RemoveStateAsync(ActionLicenseCodeKey);
+            await StateManager.RemoveStateAsync(PosDeviceModeKey);
+            await StateManager.RemoveStateAsync(InProgressDownloadsKey);
         }
 
         public async Task ReceiveReminderAsync(string reminderName, byte[] state, TimeSpan dueTime, TimeSpan period)
@@ -548,11 +554,11 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
         public async Task UpdateDownloadStatusAsync(EntitySecret entitySecret)
         {
-            WriteTimedDebug($"Updating download status: {entitySecret.EntityRefId}");
+            WriteTimedDebug($"Updating download status: {entitySecret.ValidationLicenseCode}");
 
             List <EntitySecret> inProgressDownloads = await StateManager.GetStateAsync<List<EntitySecret>>(InProgressDownloadsKey);
 
-            inProgressDownloads.RemoveAll(z => z.EntityRefId == entitySecret.EntityRefId);
+            inProgressDownloads.RemoveAll(z => z.ValidationLicenseCode == entitySecret.ValidationLicenseCode);
 
             inProgressDownloads.Add(entitySecret);
 

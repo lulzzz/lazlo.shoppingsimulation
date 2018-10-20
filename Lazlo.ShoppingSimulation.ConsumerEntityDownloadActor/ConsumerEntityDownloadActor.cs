@@ -71,7 +71,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
             {
                 EntitySecret entitySecret = await RetrieveEntityMediaAsync().ConfigureAwait(false);
 
-                WriteTimedDebug($"Ticket download: {entitySecret.EntityRefId}");
+                WriteTimedDebug($"Ticket download complete: {entitySecret.ValidationLicenseCode}");
 
                 Guid consumerId = await StateManager.GetStateAsync<Guid>(ConsumerRefIdKey);
 
@@ -96,9 +96,9 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
         {
             TicketStatusDisplay ticket = await StateManager.GetStateAsync<TicketStatusDisplay>(TicketStatusDisplayKey);
 
-            WriteTimedDebug($"Begin retrieve ticket media. {ticket.TicketTemplateType} {ticket.TicketRefId} {ticket.MediaSize}\n{ticket.SasUri}");
+            WriteTimedDebug($"Begin retrieve ticket media. {ticket.TicketTemplateType} {ticket.MediaSize}\n{ticket.SasUri}");
 
-            int chunkSize = ticket.MediaSize / 100;
+            long chunkSize = ticket.MediaSize / 100;
 
             chunkSize = chunkSize > 5000 ? chunkSize : 5000;
 
@@ -165,9 +165,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
                 {
                     return new EntitySecret
                     {
-                        EntityRefId = ticketStatus.TicketRefId,
                         Hash = encodedHash,
-                        LicenseCode = ticketLicenseCode
+                        ValidationLicenseCode = ticketStatus.ValidationLicenseCode
                     };
                 }
             }
@@ -193,9 +192,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
             {
                 return new EntitySecret
                 {
-                    EntityRefId = ticketStatus.TicketRefId,
                     Hash = encodedHash,
-                    LicenseCode = ticketLicenseCode
+                    ValidationLicenseCode = ticketStatus.ValidationLicenseCode
                 };
             }
         }
