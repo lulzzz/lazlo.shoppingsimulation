@@ -71,13 +71,6 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                 .Permit(ConsumerSimulationWorkflowActions.WaitForTicketsToRender, ConsumerSimulationStateType.WaitingForTicketsToRender)
                 .Permit(ConsumerSimulationWorkflowActions.MoveToTheBackOfTheLine, ConsumerSimulationStateType.MovingToTheBackOfTheLine);
 
-            //_StateMachine.Configure(ConsumerSimulationStateType.DownloadingTickets)
-            //    .Permit(ConsumerSimulationWorkflowActions.DownloadTicket, ConsumerSimulationStateType.DownloadingTicket);
-
-            //_StateMachine.Configure(ConsumerSimulationStateType.DownloadingTicket)
-            //    .OnEntryAsync(async () => await DownloadNextTicket())
-            //    .Permit(ConsumerSimulationWorkflowActions.DownloadTickets, ConsumerSimulationStateType.DownloadingTickets);
-
             _StateMachine.Configure(ConsumerSimulationStateType.MovingToTheBackOfTheLine)
                 .OnEntryAsync(async () => await MoveToTheBackOfTheLine())
                 .Permit(ConsumerSimulationWorkflowActions.WaitForTicketsToRender, ConsumerSimulationStateType.WaitingForTicketsToRender)
@@ -94,17 +87,12 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                     await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.RetrieveChannelGroups);
                     break;
 
-                //case ConsumerSimulationStateType.CheckingOut:           // Checkout must have failed, try again?
                 case ConsumerSimulationStateType.WaitingToCheckout:
                     await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.Checkout);
                     break;
 
                 case ConsumerSimulationStateType.WaitingForTicketsToRender:
                     await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.CheckTicketStatus);
-                    break;
-
-                case ConsumerSimulationStateType.DownloadingTickets:
-                    await _StateMachine.FireAsync(ConsumerSimulationWorkflowActions.DownloadTicket);
                     break;
             }
         }
@@ -151,27 +139,22 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 		Checkout,
 		WaitForTicketsToRender,
         CheckTicketStatus,
-        DownloadTickets,
-        DownloadTicket,
         MoveToTheBackOfTheLine
     }
 
-    [Flags]
     public enum ConsumerSimulationStateType
     {
-        None = 0,
-        ActorCreated = 1,
-        ActorInitializing = 2,
-		RetrievingChannelGroups = 4,
-		WaitingInLine = 8,
-        PosAssigned = 16,
-        WaitingToCheckout = 32,
-		CheckingOut = 64,
-        WaitingForTicketsToRender = 128,
-		CheckingTicketStatus = 256,
-        DownloadingTickets = 512,
-        DownloadingTicket = 1024,
-        MovingToTheBackOfTheLine = 2048,
-        DeadManWalking = 8196
+        None,
+        ActorCreated,
+        ActorInitializing,
+		RetrievingChannelGroups,
+		WaitingInLine,
+        PosAssigned,
+        WaitingToCheckout,
+		CheckingOut,
+        WaitingForTicketsToRender,
+		CheckingTicketStatus,
+        MovingToTheBackOfTheLine,
+        DeadManWalking
     }
 }
