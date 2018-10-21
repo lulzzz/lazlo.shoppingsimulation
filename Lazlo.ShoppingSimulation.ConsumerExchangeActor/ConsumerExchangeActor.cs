@@ -142,7 +142,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
             string appApiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
             string consumerLicenseCode = await StateManager.GetStateAsync<string>(ConsumerLicenseCodeKey).ConfigureAwait(false);
 
-            Uri requestUri = GetFullUri("api/v2/claim/ticket/exchange/low");
+            Uri requestUri = GetFullUri("api/v3/claim/ticket/exchange/low");
 
             HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
 
@@ -176,7 +176,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
 
             string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-            var response = JsonConvert.DeserializeObject<SmartResponse<List<ClaimExchangeResponse>>>(responseJson);
+            var response = JsonConvert.DeserializeObject<SmartResponse<List<ClaimExchangeResponse2>>>(responseJson);
 
             if (message.IsSuccessStatusCode)
             {
