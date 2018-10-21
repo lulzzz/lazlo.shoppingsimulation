@@ -13,6 +13,7 @@ using Newtonsoft.Json;
 using Lazlo.Common.Responses;
 using Lazlo.ShoppingSimulation.Common;
 using System.Diagnostics;
+using Lazlo.Common.Requests;
 
 namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
 {
@@ -37,6 +38,9 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
         const string WorkflowReminderKey = "WorkflowReminderKey";
 
         protected HttpClient _HttpClient = new HttpClient();
+
+        double _Latitude = 42.129224;       //TODO pull from init
+        double _Longitude = -80.085059;
 
         /// <summary>
         /// Initializes a new instance of ConsumerExchangeActor
@@ -65,6 +69,123 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
             {
                 WriteTimedDebug(ex);
                 throw;
+            }
+        }
+
+        private async Task ValidateAsync()
+        {
+            string appApiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
+            string consumerLicenseCode = await StateManager.GetStateAsync<string>(ConsumerLicenseCodeKey).ConfigureAwait(false);
+            List<EntitySecret> entities = await StateManager.GetStateAsync<List<EntitySecret>>(EntitiesKey).ConfigureAwait(false);
+
+            Uri requestUri = GetFullUri("api/v2/validation/validate");
+
+            HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
+
+            SmartRequest<ValidationsRequest> validationRequest = new SmartRequest<ValidationsRequest>
+            {
+                Data = new ValidationsRequest
+                {
+                    Validations = entities.Select(z => new ValidationRequest
+                    {
+                        MediaHash = z.Hash,
+                        ValidationLicenseCode = z.ValidationLicenseCode
+                    }).ToList()
+                },
+                Latitude = _Latitude,
+                Longitude = _Longitude,
+                Uuid = Id.GetGuidId().ToString()
+            };
+
+            string json = JsonConvert.SerializeObject(validationRequest);
+
+            httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+            httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
+            httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
+
+            HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
+
+            WriteTimedDebug($"Ticket Checkout request sent");
+
+            string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+            var response = JsonConvert.DeserializeObject<SmartResponse<ValidationResponse>>(responseJson);
+
+            if (message.IsSuccessStatusCode)
+            {
+                if(response.Data.TicketValidationStatuses?.Sum(z => z.CurrentValue) > 0)
+                {
+                    var ticketValidationStatuses = response.Data.TicketValidationStatuses.Where(z => z.CurrentValue > 0).ToList();
+
+                    await ExchangeAsync(response.Data.ClaimLicenseCode, ticketValidationStatuses);
+                }
+            }
+
+            else
+            {
+                throw new Exception($"Validation failed: {response.Error.Message}");
+            }
+        }
+
+        private async Task ExchangeAsync(string claimLicenseCode, List<TicketValidationStatus> ticketValidationStatuses)
+        {
+            decimal totalAmount = ticketValidationStatuses.Sum(z => z.CurrentValue);
+
+            var availableMerchandise = await RetrieveMerchandiseAsync();
+
+            // TODO Make this more robust
+            MerchantDisplay merchant = (from p in availableMerchandise
+                                        where p.Ranges.Any(z => totalAmount >= z.Low && totalAmount <= z.High)
+                                        select p).First();
+
+            string appApiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
+            string consumerLicenseCode = await StateManager.GetStateAsync<string>(ConsumerLicenseCodeKey).ConfigureAwait(false);
+
+            Uri requestUri = GetFullUri("api/v2/claim/ticket/exchange/low");
+
+            HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
+
+            SmartRequest<ClaimExchangeLowRequest> claimRequest = new SmartRequest<ClaimExchangeLowRequest>
+            {
+                Data = new ClaimExchangeLowRequest
+                {
+                    ClaimLicenseCode = claimLicenseCode,
+                    Merchandise = new List<ClaimExchangeMerchandise>
+                    {
+                        new ClaimExchangeMerchandise
+                        {
+                            Amount = totalAmount,
+                            MerchandiseRefId = merchant.MerchandiseRefId
+                        }
+                    }
+                },
+                Latitude = _Latitude,
+                Longitude = _Longitude,
+                Uuid = Id.GetGuidId().ToString()
+            };
+
+            string json = JsonConvert.SerializeObject(claimRequest);
+
+            httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+            httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
+            httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
+
+            HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
+
+            string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+            var response = JsonConvert.DeserializeObject<SmartResponse<List<ClaimExchangeResponse>>>(responseJson);
+
+            if (message.IsSuccessStatusCode)
+            {
+                Debug.WriteLine("Exchange succeeded");
+            }
+
+            else
+            {
+                throw new Exception($"Exchange failed: {response.Error.Message}");
             }
         }
 
@@ -130,14 +251,11 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
             WriteTimedDebug("Exchange Actor Initialized");
         }
 
-        private async Task ValidateAsync()
+        private async Task OnValidateAsync()
         {
             try
             {
-                //temp test, call validate first
-                var merchandise = await RetrieveMerchandiseAsync();
-
-                Debug.WriteLine($"Merchandise count: {merchandise.Count}");
+                await ValidateAsync();
 
                 await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.GoIdle);
             }

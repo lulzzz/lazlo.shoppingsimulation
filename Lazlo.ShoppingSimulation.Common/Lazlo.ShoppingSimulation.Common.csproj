@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Lazlo.Shopping.Common" Version="1.0.20" />
+    <PackageReference Include="Lazlo.Shopping.Common" Version="1.0.21" />
     <PackageReference Include="Microsoft.ServiceFabric.Actors" Version="3.2.187" />
     <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
   </ItemGroup>

@@ -313,6 +313,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
             ChannelDisplay channelDisplay = channelGroups.RandomPick().Channels.RandomPick();
 
+            channelDisplay = channelGroups.SelectMany(z => z.Channels).First(z => z.ChannelName.Contains("100"));
+
             // Going back to one channel request for now
             result = new List<ChannelRequest>
             {

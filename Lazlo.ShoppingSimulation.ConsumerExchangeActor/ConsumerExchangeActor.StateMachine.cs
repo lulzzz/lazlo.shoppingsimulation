@@ -37,7 +37,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
                 .Permit(ConsumerSimulationExchangeAction.Validate, ConsumerSimulationExchangeState.Validating);
 
             _StateMachine.Configure(ConsumerSimulationExchangeState.Validating)
-                .OnEntryAsync(async () => await ValidateAsync())
+                .OnEntryAsync(async () => await OnValidateAsync())
                 .Permit(ConsumerSimulationExchangeAction.GoIdle, ConsumerSimulationExchangeState.Idle);
         }
 
