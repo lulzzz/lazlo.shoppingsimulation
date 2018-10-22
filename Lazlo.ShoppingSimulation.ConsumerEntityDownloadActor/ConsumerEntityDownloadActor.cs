@@ -23,6 +23,7 @@ using ImageMagick;
 using System.Diagnostics;
 using Lazlo.Common.Requests;
 using Newtonsoft.Json;
+using Lazlo.Common;
 
 namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
 {
@@ -44,7 +45,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
         const string CheckoutSessionLicenseCodeKey = "CheckoutSessionLicenseCodeKey";
         const string ConsumerRefIdKey = "ConsumerRefIdKey";
         const string ConsumerLicenseCodeKey = "ConsumerLicenseCodeKey";
-        const string TicketStatusDisplayKey = "TicketStatusDisplayKey";
+        const string EntityDownloadKey = "EntityDownloadKey";
         const string ReminderKey = "ReminderKey";
 
         static readonly Uri ConsumerServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/ConsumerSimulationActorService");
@@ -67,7 +68,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
             string checkoutSessionLicenseCode,
             Guid consumerRefId,
             string consumerLicenseCode,
-            TicketStatusDisplay ticketStatusDisplay)
+            EntityDownload entityDownload)
         {
             if(!await StateManager.ContainsStateAsync(ConsumerRefIdKey))
             {
@@ -75,7 +76,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
                 await StateManager.SetStateAsync(CheckoutSessionLicenseCodeKey, checkoutSessionLicenseCode);
                 await StateManager.SetStateAsync(ConsumerLicenseCodeKey, consumerLicenseCode);
                 await StateManager.SetStateAsync(ConsumerRefIdKey, consumerRefId);
-                await StateManager.SetStateAsync(TicketStatusDisplayKey, ticketStatusDisplay);
+                await StateManager.SetStateAsync(EntityDownloadKey, entityDownload);
             }
 
             await RegisterReminderAsync(ReminderKey, null, TimeSpan.FromMilliseconds(1), TimeSpan.FromSeconds(5));
@@ -112,11 +113,11 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
 
         private async Task<EntitySecret> RetrieveEntityMediaAsync()
         {
-            TicketStatusDisplay ticket = await StateManager.GetStateAsync<TicketStatusDisplay>(TicketStatusDisplayKey);
+            EntityDownload entityDownload = await StateManager.GetStateAsync<EntityDownload>(EntityDownloadKey);
 
-            WriteTimedDebug($"Begin retrieve ticket media. {ticket.TicketTemplateType} {ticket.MediaSize}\n{ticket.SasUri}");
+            WriteTimedDebug($"Begin retrieve {entityDownload.MediaEntityType} {entityDownload.MediaSize}\n{entityDownload.SasReadUri}");
 
-            long chunkSize = ticket.MediaSize / 100;
+            long chunkSize = entityDownload.MediaSize / 100;
 
             chunkSize = chunkSize > 5000 ? chunkSize : 5000;
 
@@ -131,7 +132,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
 
                 do
                 {
-                    HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Get, new Uri(ticket.SasUri));
+                    HttpRequestMessage req = new HttpRequestMessage(HttpMethod.Get, new Uri(entityDownload.SasReadUri));
                     req.Headers.Range = new RangeHeaderValue(offset, offset + chunkSize - 1);
 
                     HttpResponseMessage message = await client.SendAsync(req).ConfigureAwait(false);
@@ -159,13 +160,13 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
                     mediaType = message.Content.Headers.ContentType.MediaType;
                 }
 
-                while (offset < ticket.MediaSize);
+                while (offset < entityDownload.MediaSize);
 
-                return await ExtractTicketSecrets(ticket, mediaType, ms);
+                return await ExtractTicketSecrets(entityDownload, mediaType, ms);
             }
         }
 
-        private async Task<EntitySecret> ExtractTicketSecrets(TicketStatusDisplay ticketStatus, string mediaType, MemoryStream ticketStream)
+        private async Task<EntitySecret> ExtractTicketSecrets(EntityDownload entityDownload, string mediaType, MemoryStream ticketStream)
         {
             string ticketLicenseCode = null;
 
@@ -183,8 +184,9 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
                 {
                     return new EntitySecret
                     {
+                        MediaEntityType = entityDownload.MediaEntityType,
                         Hash = encodedHash,
-                        ValidationLicenseCode = ticketStatus.ValidationLicenseCode
+                        ValidationLicenseCode = entityDownload.ValidationLicenseCode
                     };
                 }
             }
@@ -210,8 +212,9 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
             {
                 return new EntitySecret
                 {
+                    MediaEntityType = entityDownload.MediaEntityType,
                     Hash = encodedHash,
-                    ValidationLicenseCode = ticketStatus.ValidationLicenseCode
+                    ValidationLicenseCode = entityDownload.ValidationLicenseCode
                 };
             }
         }

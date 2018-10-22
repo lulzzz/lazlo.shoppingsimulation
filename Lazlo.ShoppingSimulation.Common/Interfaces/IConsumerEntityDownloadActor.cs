@@ -1,4 +1,5 @@
-﻿using Lazlo.Common.Models;
+﻿using Lazlo.Common;
+using Lazlo.Common.Models;
 using Microsoft.ServiceFabric.Actors;
 using System;
 using System.Collections.Generic;
@@ -14,6 +15,6 @@ namespace Lazlo.ShoppingSimulation.Common.Interfaces
             string checkoutSessionLicenseCode,
             Guid consumerRefId,
             string consumerLicenseCode,
-            TicketStatusDisplay ticketStatusDisplay);
+            EntityDownload entityDownload);
     }
 }

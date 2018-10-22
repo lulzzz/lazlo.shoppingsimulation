@@ -59,7 +59,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                 .Permit(ConsumerSimulationWorkflowActions.Checkout, ConsumerSimulationStateType.CheckingOut);
             
             _StateMachine.Configure(ConsumerSimulationStateType.CheckingOut)
-                .OnEntryAsync(async () => await CreateTicketCheckoutRequest())
+                .OnEntryAsync(async () => await CreateCheckoutAsync())
 				.Permit(ConsumerSimulationWorkflowActions.WaitForTicketsToRender, ConsumerSimulationStateType.WaitingForTicketsToRender)
                 .Permit(ConsumerSimulationWorkflowActions.ApproachPos, ConsumerSimulationStateType.WaitingToCheckout);  //Checkout failed
 
