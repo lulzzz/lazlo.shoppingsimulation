@@ -34,6 +34,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
         const string AppApiLicenseCodeKey = "AppApiLicenseCodeKey";
         const string ConsumerLicenseCodeKey = "ConsumerLicenseCodeKey";
         const string EntitiesKey = "EntitiesKey";
+        const string CheckoutSessionLicenseCodeKey = "CheckoutSessionLicenseCodeKey";
 
         const string WorkflowReminderKey = "WorkflowReminderKey";
 
@@ -120,6 +121,11 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
 
                     await ExchangeAsync(response.Data.ClaimLicenseCode, ticketValidationStatuses);
                 }
+
+                else
+                {
+                    await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.GoIdle);
+                }
             }
 
             else
@@ -130,28 +136,30 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
 
         private async Task ExchangeAsync(string claimLicenseCode, List<TicketValidationStatus> ticketValidationStatuses)
         {
-            decimal totalAmount = ticketValidationStatuses.Sum(z => z.CurrentValue);
-
-            var availableMerchandise = await RetrieveMerchandiseAsync();
-
-            // TODO Make this more robust
-            MerchantDisplay merchant = (from p in availableMerchandise
-                                        where p.Ranges.Any(z => totalAmount >= z.Low && totalAmount <= z.High)
-                                        select p).First();
-
-            string appApiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
-            string consumerLicenseCode = await StateManager.GetStateAsync<string>(ConsumerLicenseCodeKey).ConfigureAwait(false);
-
-            Uri requestUri = GetFullUri("api/v3/claim/ticket/exchange/low");
-
-            HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
-
-            SmartRequest<ClaimExchangeLowRequest> claimRequest = new SmartRequest<ClaimExchangeLowRequest>
+            try
             {
-                Data = new ClaimExchangeLowRequest
+                decimal totalAmount = ticketValidationStatuses.Sum(z => z.CurrentValue);
+
+                var availableMerchandise = await RetrieveMerchandiseAsync();
+
+                // TODO Make this more robust
+                MerchantDisplay merchant = (from p in availableMerchandise
+                                            where p.Ranges.Any(z => totalAmount >= z.Low && totalAmount <= z.High)
+                                            select p).First();
+
+                string appApiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
+                string consumerLicenseCode = await StateManager.GetStateAsync<string>(ConsumerLicenseCodeKey).ConfigureAwait(false);
+
+                Uri requestUri = GetFullUri("api/v3/claim/ticket/exchange/low");
+
+                HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
+
+                SmartRequest<ClaimExchangeLowRequest> claimRequest = new SmartRequest<ClaimExchangeLowRequest>
                 {
-                    ClaimLicenseCode = claimLicenseCode,
-                    Merchandise = new List<ClaimExchangeMerchandise>
+                    Data = new ClaimExchangeLowRequest
+                    {
+                        ClaimLicenseCode = claimLicenseCode,
+                        Merchandise = new List<ClaimExchangeMerchandise>
                     {
                         new ClaimExchangeMerchandise
                         {
@@ -159,33 +167,44 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
                             MerchandiseRefId = merchant.MerchandiseRefId
                         }
                     }
-                },
-                Latitude = _Latitude,
-                Longitude = _Longitude,
-                Uuid = Id.GetGuidId().ToString()
-            };
+                    },
+                    Latitude = _Latitude,
+                    Longitude = _Longitude,
+                    Uuid = Id.GetGuidId().ToString()
+                };
 
-            string json = JsonConvert.SerializeObject(claimRequest);
+                string json = JsonConvert.SerializeObject(claimRequest);
 
-            httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+                httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-            httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
-            httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
+                httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
+                httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
 
-            HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
+                HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
 
-            string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
+                string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-            var response = JsonConvert.DeserializeObject<SmartResponse<List<ClaimExchangeResponse2>>>(responseJson);
+                var response = JsonConvert.DeserializeObject<SmartResponse<ClaimExchangeResponse2>>(responseJson);
 
-            if (message.IsSuccessStatusCode)
-            {
-                Debug.WriteLine("Exchange succeeded");
+                if (message.IsSuccessStatusCode)
+                {
+                    Debug.WriteLine("Exchange succeeded");
+
+                    await StateManager.SetStateAsync(CheckoutSessionLicenseCodeKey, response.Data.CheckoutLicenseCode);
+
+                    await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.WaitForGiftCardsToDownload);
+                }
+
+                else
+                {
+                    throw new Exception($"Exchange failed: {response.Error.Message}");
+                }
             }
 
-            else
+            catch (Exception ex)
             {
-                throw new Exception($"Exchange failed: {response.Error.Message}");
+                WriteTimedDebug(ex);
+                await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.GoIdle);
             }
         }
 
@@ -240,7 +259,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
 
         private async Task OnInitialized(string appApiLicenseCodeKey, string consumerLicenseCode, List<EntitySecret> entities)
         {
-            await RegisterReminderAsync(WorkflowReminderKey, null, TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(5)).ConfigureAwait(false);
+            await RegisterReminderAsync(WorkflowReminderKey, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15)).ConfigureAwait(false);
 
             await StateManager.SetStateAsync(AppApiLicenseCodeKey, appApiLicenseCodeKey);
             await StateManager.SetStateAsync(ConsumerLicenseCodeKey, consumerLicenseCode);
@@ -251,13 +270,57 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
             WriteTimedDebug("Exchange Actor Initialized");
         }
 
+        private async Task OnCheckStatusAsync()
+        {
+            try
+            {
+                Uri requestUri = GetFullUri("api/v2/shopping/checkout/status");
+
+                HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Get, requestUri);
+
+                string appApiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
+                string consumerLicenseCode = await StateManager.GetStateAsync<string>(ConsumerLicenseCodeKey).ConfigureAwait(false);
+                string checkoutSessionLicenseCode = await StateManager.GetStateAsync<string>(CheckoutSessionLicenseCodeKey).ConfigureAwait(false);
+
+                httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
+                httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
+                httpreq.Headers.Add("lazlo-txlicensecode", checkoutSessionLicenseCode);
+
+                var message = await _HttpClient.SendAsync(httpreq);
+
+                string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                if (message.IsSuccessStatusCode)
+                {
+                    var statusResponse = JsonConvert.DeserializeObject<SmartResponse<CheckoutStatusResponse>>(responseJson);
+
+                    if(statusResponse.Data.GiftCardStatuses.Any(z => z.SasUri != null))
+                    {
+                        Debug.WriteLine("Got one");
+
+                    }
+
+                    await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.WaitForGiftCardsToDownload);
+                }
+
+                else
+                {
+                    await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.WaitForGiftCardsToDownload);
+                }
+            }
+
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.WaitForGiftCardsToDownload);
+            }
+        }
+
         private async Task OnValidateAsync()
         {
             try
             {
-                await ValidateAsync();
-
-                await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.GoIdle);
+                await ValidateAsync();                
             }
 
             catch (Exception ex)

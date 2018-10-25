@@ -493,8 +493,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
                     {
                         Cart = new CartRequest
                         {
-                            //ChannelRequests = channelSelections
-                            GiftCardSelections = giftCardSelections
+                            ChannelRequests = channelSelections
+                            //GiftCardSelections = giftCardSelections
                         },
                         //ChannelSelections = channelSelections,
                         //RetailerRefId = retailerRefId,

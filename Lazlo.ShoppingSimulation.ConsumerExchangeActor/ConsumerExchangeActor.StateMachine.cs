@@ -38,7 +38,15 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
 
             _StateMachine.Configure(ConsumerSimulationExchangeState.Validating)
                 .OnEntryAsync(async () => await OnValidateAsync())
-                .Permit(ConsumerSimulationExchangeAction.GoIdle, ConsumerSimulationExchangeState.Idle);
+                .Permit(ConsumerSimulationExchangeAction.GoIdle, ConsumerSimulationExchangeState.Idle)
+                .Permit(ConsumerSimulationExchangeAction.WaitForGiftCardsToDownload, ConsumerSimulationExchangeState.WaitingForGiftCardsToDownload);
+
+            _StateMachine.Configure(ConsumerSimulationExchangeState.WaitingForGiftCardsToDownload)
+                .Permit(ConsumerSimulationExchangeAction.CheckStatus, ConsumerSimulationExchangeState.CheckingStatus);
+
+            _StateMachine.Configure(ConsumerSimulationExchangeState.CheckingStatus)
+                .OnEntryAsync(async () => await OnCheckStatusAsync())
+                .Permit(ConsumerSimulationExchangeAction.WaitForGiftCardsToDownload, ConsumerSimulationExchangeState.WaitingForGiftCardsToDownload);
         }
 
         private async Task ProcessWorkflowAsync()
@@ -47,6 +55,10 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
             {
                 case ConsumerSimulationExchangeState.Idle:
                     await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.Validate);
+                    break;
+
+                case ConsumerSimulationExchangeState.WaitingForGiftCardsToDownload:
+                    await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.CheckStatus);
                     break;
             }
         }
@@ -68,7 +80,9 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
         ActorCreated,
         ActorInitializing,
         Idle,
-        Validating
+        Validating,
+        WaitingForGiftCardsToDownload,
+        CheckingStatus
     }
 
     public enum ConsumerSimulationExchangeAction
@@ -76,6 +90,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
         CreateActor,
         InitializeActor,
         GoIdle,
-        Validate
+        Validate,
+        WaitForGiftCardsToDownload,
+        CheckStatus
     }
 }
