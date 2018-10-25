@@ -47,8 +47,10 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
         const string ConsumerLicenseCodeKey = "ConsumerLicenseCodeKey";
         const string EntityDownloadKey = "EntityDownloadKey";
         const string ReminderKey = "ReminderKey";
+        const string SourceServiceUriKey = "SourceServiceUriKey";
 
         static readonly Uri ConsumerServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/ConsumerSimulationActorService");
+        static readonly Uri ExchangeServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/ConsumerExchangeActorService");
 
         protected HttpClient _HttpClient = new HttpClient();
 
@@ -66,7 +68,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
         public async Task InitalizeAsync(
             string appApiLicenseCodeKey,
             string checkoutSessionLicenseCode,
-            Guid consumerRefId,
+            Uri sourceServiceUri,
+            Guid sourceActorId,            
             string consumerLicenseCode,
             EntityDownload entityDownload)
         {
@@ -75,8 +78,9 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
                 await StateManager.SetStateAsync(AppApiLicenseCodeKey, appApiLicenseCodeKey);
                 await StateManager.SetStateAsync(CheckoutSessionLicenseCodeKey, checkoutSessionLicenseCode);
                 await StateManager.SetStateAsync(ConsumerLicenseCodeKey, consumerLicenseCode);
-                await StateManager.SetStateAsync(ConsumerRefIdKey, consumerRefId);
-                await StateManager.SetStateAsync(EntityDownloadKey, entityDownload);
+                await StateManager.SetStateAsync(SourceServiceUriKey, sourceServiceUri);
+                await StateManager.SetStateAsync(ConsumerRefIdKey, sourceActorId);
+                await StateManager.SetStateAsync(EntityDownloadKey, entityDownload);                
             }
 
             await RegisterReminderAsync(ReminderKey, null, TimeSpan.FromMilliseconds(1), TimeSpan.FromSeconds(5));
@@ -92,13 +96,22 @@ namespace Lazlo.ShoppingSimulation.ConsumerEntityDownloadActor
 
                 await CallEntityReceivedAsync(entitySecret);
 
-                Guid consumerId = await StateManager.GetStateAsync<Guid>(ConsumerRefIdKey);
+                Guid sourceActorId = await StateManager.GetStateAsync<Guid>(ConsumerRefIdKey);
+                Uri sourceServiceUri = await StateManager.GetStateAsync<Uri>(SourceServiceUriKey);
 
-                ActorId consumerActorId = new ActorId(consumerId);
+                if(sourceServiceUri == ConsumerServiceUri)
+                {
+                    IConsumerSimulationActor consumerActor = ActorProxy.Create<IConsumerSimulationActor>(new ActorId(sourceActorId), sourceServiceUri);
 
-                IConsumerSimulationActor consumerActor = ActorProxy.Create<IConsumerSimulationActor>(consumerActorId, ConsumerServiceUri);
+                    await consumerActor.UpdateDownloadStatusAsync(entitySecret);
+                }
 
-                await consumerActor.UpdateDownloadStatusAsync(entitySecret);
+                else
+                {
+                    IConsumerExchangeActor exchangeActor = ActorProxy.Create<IConsumerExchangeActor>(new ActorId(sourceActorId), sourceServiceUri);
+
+                    await exchangeActor.UpdateDownloadStatusAsync(entitySecret);
+                }
 
                 var reminder = GetReminder(ReminderKey);
 

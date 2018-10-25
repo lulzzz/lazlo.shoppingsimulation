@@ -28,6 +28,8 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
     [StatePersistence(StatePersistence.Persisted)]
     public partial class ConsumerExchangeActor : Actor, IConsumerExchangeActor, IRemindable
     {
+        static readonly Uri EntityDownloadServiceUri = new Uri("fabric:/Deploy.Lazlo.ShoppingSimulation/ConsumerEntityDownloadActorService");
+
         const bool _UseLocalHost = false;
         string _UriBase = "devshopapi.services.32point6.com";
 
@@ -35,8 +37,12 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
         const string ConsumerLicenseCodeKey = "ConsumerLicenseCodeKey";
         const string EntitiesKey = "EntitiesKey";
         const string CheckoutSessionLicenseCodeKey = "CheckoutSessionLicenseCodeKey";
-
+        const string ClaimLicenseCodeKey = "ClaimLicenseCodeKey";
+        const string ClaimAmountKey = "ClaimAmountKey";
+        const string PendingGiftCardsKey = "PendingGiftCardsKey";
         const string WorkflowReminderKey = "WorkflowReminderKey";
+
+        const string WorkflowCompletionDetectedKey = "WorkflowCompletionDetectedKey";
 
         protected HttpClient _HttpClient = new HttpClient();
 
@@ -73,72 +79,106 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
             }
         }
 
-        private async Task ValidateAsync()
+        private async Task OnValidateAsync()
         {
-            string appApiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
-            string consumerLicenseCode = await StateManager.GetStateAsync<string>(ConsumerLicenseCodeKey).ConfigureAwait(false);
-            List<EntitySecret> entities = await StateManager.GetStateAsync<List<EntitySecret>>(EntitiesKey).ConfigureAwait(false);
-
-            Uri requestUri = GetFullUri("api/v2/validation/validate");
-
-            HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
-
-            SmartRequest<ValidationsRequest> validationRequest = new SmartRequest<ValidationsRequest>
+            try
             {
-                Data = new ValidationsRequest
+                string appApiLicenseCode = await StateManager.GetStateAsync<string>(AppApiLicenseCodeKey).ConfigureAwait(false);
+                string consumerLicenseCode = await StateManager.GetStateAsync<string>(ConsumerLicenseCodeKey).ConfigureAwait(false);
+                List<EntitySecret> entities = await StateManager.GetStateAsync<List<EntitySecret>>(EntitiesKey).ConfigureAwait(false);
+
+                Uri requestUri = GetFullUri("api/v2/validation/validate");
+
+                HttpRequestMessage httpreq = new HttpRequestMessage(HttpMethod.Post, requestUri);
+
+                SmartRequest<ValidationsRequest> validationRequest = new SmartRequest<ValidationsRequest>
                 {
-                    Validations = entities.Select(z => new ValidationRequest
+                    Data = new ValidationsRequest
                     {
-                        MediaHash = z.Hash,
-                        ValidationLicenseCode = z.ValidationLicenseCode
-                    }).ToList()
-                },
-                Latitude = _Latitude,
-                Longitude = _Longitude,
-                Uuid = Id.GetGuidId().ToString()
-            };
+                        Validations = entities.Select(z => new ValidationRequest
+                        {
+                            MediaHash = z.Hash,
+                            ValidationLicenseCode = z.ValidationLicenseCode
+                        }).ToList()
+                    },
+                    Latitude = _Latitude,
+                    Longitude = _Longitude,
+                    Uuid = Id.GetGuidId().ToString()
+                };
 
-            string json = JsonConvert.SerializeObject(validationRequest);
+                string json = JsonConvert.SerializeObject(validationRequest);
 
-            httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+                httpreq.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-            httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
-            httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
+                httpreq.Headers.Add("lazlo-consumerlicensecode", consumerLicenseCode);
+                httpreq.Headers.Add("lazlo-apilicensecode", appApiLicenseCode);
 
-            HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
+                HttpResponseMessage message = await _HttpClient.SendAsync(httpreq).ConfigureAwait(false);
 
-            WriteTimedDebug($"Ticket Checkout request sent");
+                WriteTimedDebug($"Ticket Checkout request sent");
 
-            string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
+                string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-            var response = JsonConvert.DeserializeObject<SmartResponse<ValidationResponse>>(responseJson);
+                var response = JsonConvert.DeserializeObject<SmartResponse<ValidationResponse>>(responseJson);
 
-            if (message.IsSuccessStatusCode)
-            {
-                if(response.Data.TicketValidationStatuses?.Sum(z => z.CurrentValue) > 0)
+                if (message.IsSuccessStatusCode)
                 {
-                    var ticketValidationStatuses = response.Data.TicketValidationStatuses.Where(z => z.CurrentValue > 0).ToList();
+                    if (response.Data.TicketValidationStatuses.Sum(z => z.CurrentValue) > 0)
+                    {
+                        if(await StateManager.ContainsStateAsync(WorkflowCompletionDetectedKey))
+                        {
+                            WriteTimedDebug("Houston, we've got a problem");
+                        }
 
-                    await ExchangeAsync(response.Data.ClaimLicenseCode, ticketValidationStatuses);
+                        decimal claimAmount = response.Data.TicketValidationStatuses.Sum(z => z.CurrentValue);
+
+                        await StateManager.SetStateAsync(ClaimLicenseCodeKey, response.Data.ClaimLicenseCode);
+                        await StateManager.SetStateAsync(ClaimAmountKey, claimAmount);
+
+                        await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.WaitToExchange);
+                    }
+
+                    else if(response.Data.TicketValidationStatuses.All(z => z.OutstandingPanelCount == 0) && response.Data.TicketValidationStatuses.Sum(z => z.CurrentValue) == 0)
+                    {
+                        if(await StateManager.TryAddStateAsync(WorkflowCompletionDetectedKey, true))
+                        {
+                            WriteTimedDebug($"Cycle complete: {Id}");
+                        }
+
+                        // Looping for now to make sure logic is correct, but I think I saw a potential situation where a ticket still had value 
+                        await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.GoIdle);
+
+                        // The following is ultimately the proper workflow
+                        //var reminder = GetReminder(WorkflowReminderKey);
+                        //await UnregisterReminderAsync(reminder);
+                        //TODO Queue actor deletion
+                    }
+
+                    else
+                    {
+                        await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.GoIdle);
+                    }
                 }
 
                 else
                 {
-                    await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.GoIdle);
+                    throw new Exception($"Validation failed: {response.Error.Message}");
                 }
             }
 
-            else
+            catch (Exception ex)
             {
-                throw new Exception($"Validation failed: {response.Error.Message}");
+                WriteTimedDebug(ex);
+                await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.GoIdle);
             }
         }
 
-        private async Task ExchangeAsync(string claimLicenseCode, List<TicketValidationStatus> ticketValidationStatuses)
+        private async Task OnExchangeAsync()
         {
             try
             {
-                decimal totalAmount = ticketValidationStatuses.Sum(z => z.CurrentValue);
+                string claimLicenseCode = await StateManager.GetStateAsync<string>(ClaimLicenseCodeKey);
+                decimal totalAmount = await StateManager.GetStateAsync<decimal>(ClaimAmountKey);
 
                 var availableMerchandise = await RetrieveMerchandiseAsync();
 
@@ -192,7 +232,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
 
                     await StateManager.SetStateAsync(CheckoutSessionLicenseCodeKey, response.Data.CheckoutLicenseCode);
 
-                    await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.WaitForGiftCardsToDownload);
+                    await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.WaitForGiftCardsToRender);
                 }
 
                 else
@@ -204,7 +244,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
             catch (Exception ex)
             {
                 WriteTimedDebug(ex);
-                await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.GoIdle);
+                await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.WaitToExchange);
             }
         }
 
@@ -290,44 +330,62 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
 
                 string responseJson = await message.Content.ReadAsStringAsync().ConfigureAwait(false);
 
+                var statusResponse = JsonConvert.DeserializeObject<SmartResponse<CheckoutStatusResponse>>(responseJson);
+
                 if (message.IsSuccessStatusCode)
                 {
-                    var statusResponse = JsonConvert.DeserializeObject<SmartResponse<CheckoutStatusResponse>>(responseJson);
-
-                    if(statusResponse.Data.GiftCardStatuses.Any(z => z.SasUri != null))
+                    if(statusResponse.Data.GiftCardStatusCount == statusResponse.Data.GiftCardStatuses.Count(z => z.SasUri != null))
                     {
-                        Debug.WriteLine("Got one");
+                        List<EntityDownload> downloads = new List<EntityDownload>();
 
+                        foreach(var item in statusResponse.Data.GiftCardStatuses)
+                        {
+                            EntityDownload pendingDownload = new EntityDownload
+                            {
+                                MediaEntityType = Lazlo.Common.Enumerators.MediaEntityType.GiftCard,
+                                MediaSize = item.MediaSize,
+                                SasReadUri = item.SasUri,
+                                ValidationLicenseCode = item.ValidationLicenseCode
+                            };
+
+                            downloads.Add(pendingDownload);
+
+                            ActorId downloadActorId = new ActorId(pendingDownload.ValidationLicenseCode);
+
+                            IConsumerEntityDownloadActor downloadActor = ActorProxy.Create<IConsumerEntityDownloadActor>(downloadActorId, EntityDownloadServiceUri);
+
+                            await downloadActor.InitalizeAsync(appApiLicenseCode, checkoutSessionLicenseCode, ServiceUri, Id.GetGuidId(), consumerLicenseCode, pendingDownload);
+                        }
+
+                        await StateManager.SetStateAsync(PendingGiftCardsKey, downloads);
+
+                        await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.WaitForGiftCardsToDownload);
                     }
 
-                    await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.WaitForGiftCardsToDownload);
+                    else
+                    {
+                        await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.WaitForGiftCardsToRender);
+                    }
                 }
 
                 else
                 {
-                    await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.WaitForGiftCardsToDownload);
+                    if(message.StatusCode == System.Net.HttpStatusCode.Processing)
+                    {
+                        await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.WaitForGiftCardsToRender);
+                    }
+
+                    else
+                    {
+                        throw new Exception(statusResponse.Error.Message);
+                    }
                 }
-            }
-
-            catch (Exception ex)
-            {
-                Debug.WriteLine(ex);
-                await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.WaitForGiftCardsToDownload);
-            }
-        }
-
-        private async Task OnValidateAsync()
-        {
-            try
-            {
-                await ValidateAsync();                
             }
 
             catch (Exception ex)
             {
                 WriteTimedDebug(ex);
-
-                await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.GoIdle);
+                await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.WaitForGiftCardsToRender);
             }
         }
 
@@ -339,6 +397,24 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
         private void WriteTimedDebug(Exception ex)
         {
             Debug.WriteLine($"{DateTimeOffset.Now}: {ex}");
+        }
+
+        public async Task UpdateDownloadStatusAsync(EntitySecret entitySecret)
+        {
+            List<EntityDownload> pending = await StateManager.GetStateAsync<List<EntityDownload>>(PendingGiftCardsKey);
+
+            pending.RemoveAll(z => z.ValidationLicenseCode == entitySecret.ValidationLicenseCode);
+
+            if(pending.Count == 0)
+            {
+                await StateManager.RemoveStateAsync(PendingGiftCardsKey);
+                await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.GoIdle);
+            }
+
+            else
+            {
+                await StateManager.SetStateAsync(PendingGiftCardsKey, pending);
+            }
         }
     }
 }

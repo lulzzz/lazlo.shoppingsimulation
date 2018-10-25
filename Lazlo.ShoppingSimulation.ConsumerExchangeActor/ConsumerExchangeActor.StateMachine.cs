@@ -39,14 +39,26 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
             _StateMachine.Configure(ConsumerSimulationExchangeState.Validating)
                 .OnEntryAsync(async () => await OnValidateAsync())
                 .Permit(ConsumerSimulationExchangeAction.GoIdle, ConsumerSimulationExchangeState.Idle)
-                .Permit(ConsumerSimulationExchangeAction.WaitForGiftCardsToDownload, ConsumerSimulationExchangeState.WaitingForGiftCardsToDownload);
+                .Permit(ConsumerSimulationExchangeAction.WaitToExchange, ConsumerSimulationExchangeState.ExchangePending);
 
-            _StateMachine.Configure(ConsumerSimulationExchangeState.WaitingForGiftCardsToDownload)
+            _StateMachine.Configure(ConsumerSimulationExchangeState.ExchangePending)
+                .Permit(ConsumerSimulationExchangeAction.Exchange, ConsumerSimulationExchangeState.Exchanging);
+
+            _StateMachine.Configure(ConsumerSimulationExchangeState.Exchanging)
+                .OnEntryAsync(async () => await OnExchangeAsync())
+                .Permit(ConsumerSimulationExchangeAction.WaitToExchange, ConsumerSimulationExchangeState.ExchangePending)
+                .Permit(ConsumerSimulationExchangeAction.WaitForGiftCardsToRender, ConsumerSimulationExchangeState.WaitingForGiftCardsToRender);
+
+            _StateMachine.Configure(ConsumerSimulationExchangeState.WaitingForGiftCardsToRender)
                 .Permit(ConsumerSimulationExchangeAction.CheckStatus, ConsumerSimulationExchangeState.CheckingStatus);
 
             _StateMachine.Configure(ConsumerSimulationExchangeState.CheckingStatus)
                 .OnEntryAsync(async () => await OnCheckStatusAsync())
+                .Permit(ConsumerSimulationExchangeAction.WaitForGiftCardsToRender, ConsumerSimulationExchangeState.WaitingForGiftCardsToRender)
                 .Permit(ConsumerSimulationExchangeAction.WaitForGiftCardsToDownload, ConsumerSimulationExchangeState.WaitingForGiftCardsToDownload);
+
+            _StateMachine.Configure(ConsumerSimulationExchangeState.WaitingForGiftCardsToDownload)
+                .Permit(ConsumerSimulationExchangeAction.GoIdle, ConsumerSimulationExchangeState.Idle);              
         }
 
         private async Task ProcessWorkflowAsync()
@@ -57,7 +69,11 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
                     await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.Validate);
                     break;
 
-                case ConsumerSimulationExchangeState.WaitingForGiftCardsToDownload:
+                case ConsumerSimulationExchangeState.ExchangePending:
+                    await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.Exchange);
+                    break;
+
+                case ConsumerSimulationExchangeState.WaitingForGiftCardsToRender:
                     await _StateMachine.FireAsync(ConsumerSimulationExchangeAction.CheckStatus);
                     break;
             }
@@ -81,8 +97,12 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
         ActorInitializing,
         Idle,
         Validating,
+        ExchangePending,
+        Exchanging,
+        WaitingForGiftCardsToRender,
         WaitingForGiftCardsToDownload,
-        CheckingStatus
+        CheckingStatus,
+        DownloadingGiftCards
     }
 
     public enum ConsumerSimulationExchangeAction
@@ -91,7 +111,10 @@ namespace Lazlo.ShoppingSimulation.ConsumerExchangeActor
         InitializeActor,
         GoIdle,
         Validate,
+        WaitToExchange,
+        Exchange,
+        WaitForGiftCardsToRender,
         WaitForGiftCardsToDownload,
-        CheckStatus
+        CheckStatus,
     }
 }

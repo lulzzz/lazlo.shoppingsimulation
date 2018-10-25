@@ -13,7 +13,8 @@ namespace Lazlo.ShoppingSimulation.Common.Interfaces
         Task InitalizeAsync(
             string appApiLicenseCodeKey,
             string checkoutSessionLicenseCode,
-            Guid consumerRefId,
+            Uri serviceUri,
+            Guid sourceActorId,
             string consumerLicenseCode,
             EntityDownload entityDownload);
     }

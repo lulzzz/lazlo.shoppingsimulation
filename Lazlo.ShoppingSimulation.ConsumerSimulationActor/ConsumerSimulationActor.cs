@@ -223,7 +223,7 @@ namespace Lazlo.ShoppingSimulation.ConsumerSimulationActor
 
                             IConsumerEntityDownloadActor downloadActor = ActorProxy.Create<IConsumerEntityDownloadActor>(downloadActorId, EntityDownloadServiceUri);
 
-                            await downloadActor.InitalizeAsync(appApiLicenseCode, checkoutSessionLicenseCode, Id.GetGuidId(), consumerLicenseCode, pendingDownload);
+                            await downloadActor.InitalizeAsync(appApiLicenseCode, checkoutSessionLicenseCode, ServiceUri, Id.GetGuidId(), consumerLicenseCode, pendingDownload);
 
                             inProgressDownloads.Add(new EntitySecret { MediaEntityType = pendingDownload.MediaEntityType, ValidationLicenseCode = pendingDownload.ValidationLicenseCode });                            
                         }
